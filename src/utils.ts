@@ -1,74 +1,165 @@
-import { safeJsonStringify, safeJsonParse } from 'pouchdb-json'
+import { createError, WSQ_ERROR } from 'pouchdb-errors'
+import { guardedConsole } from 'pouchdb-utils'
+import { BY_SEQ_STORE, ATTACH_STORE, ATTACH_AND_SEQ_STORE } from './constants'
+import type { Transaction } from '@op-engineering/op-sqlite'
 
-export function qMarks(num: number): string {
-  let accum = '?'
-  for (let i = 1; i < num; i++) {
-    accum += ', ?'
-  }
-  return accum
-}
-
-export function stringifyDoc(doc: any): string {
+function stringifyDoc(doc: Record<string, any>): string {
+  // don't bother storing the id/rev. it uses lots of space,
+  // in persistent map/reduce especially
   delete doc._id
   delete doc._rev
-  return safeJsonStringify(doc)
+  return JSON.stringify(doc)
 }
 
-export function unstringifyDoc(doc: string, id: string, rev: string): any {
-  const parsed = safeJsonParse(doc)
-  parsed._id = id
-  parsed._rev = rev
-  return parsed
+function unstringifyDoc(
+  doc: string,
+  id: string,
+  rev: string
+): Record<string, any> {
+  const parsedDoc = JSON.parse(doc)
+  parsedDoc._id = id
+  parsedDoc._rev = rev
+  return parsedDoc
 }
 
-export function select(
-  selectStmt: string,
-  from: string | string[],
-  joiner?: string,
+// question mark groups IN queries, e.g. 3 -> '(?,?,?)'
+function qMarks(num: number): string {
+  let s = '('
+  while (num--) {
+    s += '?'
+    if (num) {
+      s += ','
+    }
+  }
+  return s + ')'
+}
+
+function select(
+  selector: string,
+  table: string | string[],
+  joiner?: string | null,
   where?: string | string[],
   orderBy?: string
 ): string {
   return (
     'SELECT ' +
-    selectStmt +
+    selector +
     ' FROM ' +
-    (typeof from === 'string' ? from : from.join(' JOIN ')) +
+    (typeof table === 'string' ? table : table.join(' JOIN ')) +
     (joiner ? ' ON ' + joiner : '') +
     (where
-      ? ' WHERE ' +
-        (typeof where === 'string' ? where : where.join(' AND '))
+      ? ' WHERE ' + (typeof where === 'string' ? where : where.join(' AND '))
       : '') +
     (orderBy ? ' ORDER BY ' + orderBy : '')
   )
 }
 
-export function compactRevs(revs: string[], docId: string, db: any): void {
-  const pairs: Array<[string, string]> = []
-  revs.forEach(function (rev) {
-    const idx = rev.indexOf('-')
-    const prefix = rev.substring(0, idx)
-    const suffix = rev.substring(idx + 1)
-    pairs.push([prefix, suffix])
-  })
-
-  const sqlArgs: any[] = []
-  pairs.forEach(function (pair) {
-    sqlArgs.push(docId)
-    sqlArgs.push(pair[0])
-    sqlArgs.push(pair[1])
-  })
-
-  const sql =
-    'DELETE FROM "by-sequence" WHERE doc_id=? AND rev IN (' +
-    pairs.map(() => '(? || "-" || ?)').join(', ') +
-    ')'
-
-  db.run(sql, ...sqlArgs)
-}
-
-export function handleSQLiteError(err: any, callback?: Function) {
-  if (callback) {
-    return callback(err)
+async function compactRevs(
+  revs: string[],
+  docId: string,
+  tx: Transaction
+): Promise<void> {
+  if (!revs.length) {
+    return
   }
-  throw err
+
+  let numDone = 0
+  const seqs: number[] = []
+
+  function checkDone() {
+    if (++numDone === revs.length) {
+      // done
+      deleteOrphans()
+    }
+  }
+
+  async function deleteOrphans() {
+    // find orphaned attachment digests
+
+    if (!seqs.length) {
+      return
+    }
+
+    let sql =
+      'SELECT DISTINCT digest AS digest FROM ' +
+      ATTACH_AND_SEQ_STORE +
+      ' WHERE seq IN ' +
+      qMarks(seqs.length)
+
+    let res = await tx.execute(sql, seqs)
+    const digestsToCheck: string[] = []
+    if (res.rows) {
+      for (let i = 0; i < res.rows.length; i++) {
+        digestsToCheck.push(res.rows[i]!.digest as string)
+      }
+    }
+    if (!digestsToCheck.length) {
+      return
+    }
+
+    sql =
+      'DELETE FROM ' +
+      ATTACH_AND_SEQ_STORE +
+      ' WHERE seq IN (' +
+      seqs.map(() => '?').join(',') +
+      ')'
+    await tx.execute(sql, seqs)
+    sql =
+      'SELECT digest FROM ' +
+      ATTACH_AND_SEQ_STORE +
+      ' WHERE digest IN (' +
+      digestsToCheck.map(() => '?').join(',') +
+      ')'
+    res = await tx.execute(sql, digestsToCheck)
+    const nonOrphanedDigests = new Set<string>()
+    if (res.rows) {
+      for (let i = 0; i < res.rows.length; i++) {
+        nonOrphanedDigests.add(res.rows[i]!.digest as string)
+      }
+    }
+    for (const digest of digestsToCheck) {
+      if (nonOrphanedDigests.has(digest)) {
+        return
+      }
+      await tx.execute(
+        'DELETE FROM ' + ATTACH_AND_SEQ_STORE + ' WHERE digest=?',
+        [digest]
+      )
+      await tx.execute('DELETE FROM ' + ATTACH_STORE + ' WHERE digest=?', [
+        digest,
+      ])
+    }
+  }
+
+  // update by-seq and attach stores in parallel
+  for (const rev of revs) {
+    const sql = 'SELECT seq FROM ' + BY_SEQ_STORE + ' WHERE doc_id=? AND rev=?'
+
+    const res = await tx.execute(sql, [docId, rev])
+    if (!res.rows?.length) {
+      // already deleted
+      return checkDone()
+    }
+    const seq = res.rows[0]!.seq as number
+    seqs.push(seq)
+
+    await tx.execute('DELETE FROM ' + BY_SEQ_STORE + ' WHERE seq=?', [seq])
+  }
 }
+
+export function handleSQLiteError(
+  event: Error,
+  callback?: (error: any) => void
+) {
+  guardedConsole('error', 'SQLite threw an error', event)
+  // event may actually be a SQLError object, so report is as such
+  const errorNameMatch =
+    event && event.constructor.toString().match(/function ([^(]+)/)
+  const errorName = (errorNameMatch && errorNameMatch[1]) || event.name
+  const errorReason = event.message
+  const error = createError(WSQ_ERROR, errorReason, errorName)
+  if (callback) callback(error)
+  else return error
+}
+
+export { stringifyDoc, unstringifyDoc, qMarks, select, compactRevs }

@@ -23,6 +23,7 @@
   "license": "MIT",
   "dependencies": {
     "better-sqlite3": "^12.2.0",
+    "pouchdb-adapter-utils": "^9.0.0",
     "pouchdb-binary-utils": "^9.0.0",
     "pouchdb-errors": "^9.0.0",
     "pouchdb-json": "^9.0.0",

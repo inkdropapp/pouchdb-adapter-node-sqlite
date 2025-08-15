@@ -300,7 +300,7 @@ describe('basics', () => {
       { _bing: { 'wha?': 'soda can' } }
     ]
     const db = new PouchDB(dbName, { adapter: 'sqlite3' })
-    await expect(db.bulkDocs(bad_docs)).rejects.toThrow(/doc_validation/)
+    await expect(db.bulkDocs(bad_docs)).rejects.toThrow(/Bad special document member/)
   })
 
   it('Replication fields', async () => {
@@ -342,7 +342,7 @@ describe('basics', () => {
   it('Put doc without _id should fail', async () => {
     const db = new PouchDB(dbName, { adapter: 'sqlite3' })
     await expect(db.put({ test: 'somestuff' } as any)).rejects.toThrow(
-      /Missing/
+      /_id is required for puts/
     )
   })
 

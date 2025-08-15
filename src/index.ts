@@ -1,6 +1,10 @@
 import SqlPouchCore from './core'
+import type { OpenDatabaseOptions } from './openDatabase'
 
-function SQLitePouch(opts: any, callback: (err: any) => void) {
+function ReactNativeSQLitePouch(
+  opts: OpenDatabaseOptions,
+  callback: (err: any) => void
+) {
   try {
     // @ts-ignore
     SqlPouchCore.call(this, opts, callback)
@@ -9,11 +13,12 @@ function SQLitePouch(opts: any, callback: (err: any) => void) {
   }
 }
 
-SQLitePouch.valid = function () {
+// Set static properties
+ReactNativeSQLitePouch.valid = function () {
   return true
 }
-SQLitePouch.use_prefix = false
+ReactNativeSQLitePouch.use_prefix = false
 
-export default function sqlitePlugin(PouchDB: any) {
-  PouchDB.adapter('sqlite3', SQLitePouch, true)
+export default function reactNativeSqlitePlugin(PouchDB: any) {
+  PouchDB.adapter('react-native-sqlite', ReactNativeSQLitePouch, true)
 }
