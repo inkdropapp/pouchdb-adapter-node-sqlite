@@ -1,0 +1,11 @@
+node_modules/
+lib/
+*.log
+.DS_Store
+*.sqlite
+*.sqlite3
+.env
+coverage/
+.vscode/
+.idea/
+tests-from-pouchdb
