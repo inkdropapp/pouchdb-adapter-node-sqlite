@@ -1,7 +1,7 @@
 import { createError, WSQ_ERROR } from 'pouchdb-errors'
 import { guardedConsole } from 'pouchdb-utils'
 import { BY_SEQ_STORE, ATTACH_STORE, ATTACH_AND_SEQ_STORE } from './constants'
-import type { Transaction } from '@op-engineering/op-sqlite'
+import type { Transaction } from './transactionQueue'
 
 function stringifyDoc(doc: Record<string, any>): string {
   // don't bother storing the id/rev. it uses lots of space,
@@ -126,7 +126,7 @@ async function compactRevs(
         [digest]
       )
       await tx.execute('DELETE FROM ' + ATTACH_STORE + ' WHERE digest=?', [
-        digest,
+        digest
       ])
     }
   }

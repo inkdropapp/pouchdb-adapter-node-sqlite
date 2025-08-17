@@ -9,3 +9,6 @@ coverage/
 .vscode/
 .idea/
 tests-from-pouchdb
+
+temp-*.sqlite*
+test-*.sqlite*

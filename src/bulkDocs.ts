@@ -2,7 +2,7 @@ import {
   preprocessAttachments,
   isLocalId,
   processDocs,
-  parseDoc,
+  parseDoc
 } from 'pouchdb-adapter-utils'
 import { compactTree } from 'pouchdb-merge'
 import { safeJsonParse, safeJsonStringify } from 'pouchdb-json'
@@ -12,11 +12,11 @@ import {
   DOC_STORE,
   BY_SEQ_STORE,
   ATTACH_STORE,
-  ATTACH_AND_SEQ_STORE,
+  ATTACH_AND_SEQ_STORE
 } from './constants'
 
 import { select, stringifyDoc, compactRevs, handleSQLiteError } from './utils'
-import type { Transaction } from '@op-engineering/op-sqlite'
+import type { Transaction } from './transactionQueue'
 import { logger } from './debug'
 
 interface DocInfo {
@@ -50,14 +50,14 @@ async function sqliteBulkDocs(
   const newEdits = opts.new_edits
   const userDocs = req.docs
 
-  const docInfos: DocInfo[] = userDocs.map((doc) => {
+  const docInfos: DocInfo[] = userDocs.map(doc => {
     if (doc._id && isLocalId(doc._id)) {
       return doc
     }
     return parseDoc(doc, newEdits, dbOpts)
   })
 
-  const docInfoErrors = docInfos.filter((docInfo) => docInfo.error)
+  const docInfoErrors = docInfos.filter(docInfo => docInfo.error)
   if (docInfoErrors.length) {
     throw docInfoErrors[0]
   }
@@ -86,9 +86,9 @@ async function sqliteBulkDocs(
 
   async function verifyAttachments(): Promise<void> {
     const digests: string[] = []
-    docInfos.forEach((docInfo) => {
+    docInfos.forEach(docInfo => {
       if (docInfo.data && docInfo.data._attachments) {
-        Object.keys(docInfo.data._attachments).forEach((filename) => {
+        Object.keys(docInfo.data._attachments).forEach(filename => {
           const att = docInfo.data._attachments[filename]
           if (att.stub) {
             logger.debug('attachment digest', att.digest)
@@ -151,7 +151,7 @@ async function sqliteBulkDocs(
       results[resultsIdx] = {
         ok: true,
         id: docInfo.metadata.id,
-        rev: rev,
+        rev: rev
       }
       fetchedDocs.set(id, docInfo.metadata)
     }
@@ -170,7 +170,7 @@ async function sqliteBulkDocs(
         return tx.execute(sql, sqlArgs)
       }
 
-      await Promise.all(attsToAdd.map((att) => add(att)))
+      await Promise.all(attsToAdd.map(att => add(att)))
     }
 
     docInfo.data._id = docInfo.metadata.id

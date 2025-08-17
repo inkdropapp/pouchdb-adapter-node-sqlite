@@ -1,14 +1,13 @@
-import { open } from '@op-engineering/op-sqlite'
+import Database from 'better-sqlite3'
 import { TransactionQueue } from './transactionQueue'
-import type { DB } from '@op-engineering/op-sqlite'
 
-type SQLiteOpenParams = Parameters<typeof open>
-export type OpenDatabaseOptions = SQLiteOpenParams[0] & {
+export type OpenDatabaseOptions = Database.Options & {
+  name: string
   revs_limit?: number
 }
 type OpenDatabaseResult =
   | {
-      db: DB
+      db: InstanceType<typeof Database>
       transactionQueue: TransactionQueue
     }
   | {
@@ -19,7 +18,15 @@ const cachedDatabases = new Map<string, OpenDatabaseResult>()
 
 function openDBSafely(opts: OpenDatabaseOptions): OpenDatabaseResult {
   try {
-    const db = open(opts)
+    // Extract Database.Options from our extended options
+    const { name, revs_limit, ...dbOptions } = opts
+
+    // Ensure database can be created if it doesn't exist
+    if (dbOptions.readonly === undefined) {
+      dbOptions.readonly = false
+    }
+
+    const db = new Database(name, dbOptions)
     const transactionQueue = new TransactionQueue(db)
     return { db, transactionQueue }
   } catch (err: any) {

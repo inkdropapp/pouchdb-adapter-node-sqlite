@@ -3,17 +3,17 @@ import {
   pick,
   filterChange,
   changesHandler as Changes,
-  uuid,
+  uuid
 } from 'pouchdb-utils'
 import {
   collectConflicts,
   traverseRevTree,
-  latest as getLatest,
+  latest as getLatest
 } from 'pouchdb-merge'
 import { safeJsonParse, safeJsonStringify } from 'pouchdb-json'
 import {
   binaryStringToBlobOrBuffer as binStringToBlob,
-  btoa,
+  btoa
 } from 'pouchdb-binary-utils'
 
 import sqliteBulkDocs from './bulkDocs'
@@ -27,7 +27,7 @@ import {
   ATTACH_STORE,
   LOCAL_STORE,
   META_STORE,
-  ATTACH_AND_SEQ_STORE,
+  ATTACH_AND_SEQ_STORE
 } from './constants'
 
 import {
@@ -36,12 +36,12 @@ import {
   unstringifyDoc,
   select,
   compactRevs,
-  handleSQLiteError,
+  handleSQLiteError
 } from './utils'
 
 import openDB, { closeDB, type OpenDatabaseOptions } from './openDatabase'
-import type { DB, Transaction } from '@op-engineering/op-sqlite'
-import type { TransactionQueue } from './transactionQueue'
+import Database from 'better-sqlite3'
+import type { Transaction, TransactionQueue } from './transactionQueue'
 import { logger } from './debug'
 
 // these indexes cover the ground for most allDocs queries
@@ -86,7 +86,7 @@ const sqliteChanges = new Changes()
 function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
   // @ts-ignore
   let api = this as any
-  let db: DB
+  let db: InstanceType<typeof Database>
   // @ts-ignore
   let txnQueue: TransactionQueue
   let instanceId: string
@@ -102,7 +102,7 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
     db = openDBResult.db
     txnQueue = openDBResult.transactionQueue
     setup(cb)
-    logger.debug('Database was opened successfully.', db.getDbPath())
+    logger.debug('Database was opened successfully.', db.name)
   } else {
     handleSQLiteError(openDBResult.error, cb)
   }
@@ -116,7 +116,7 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
   }
 
   async function setup(callback: (err: any) => void) {
-    await db.transaction(async (tx) => {
+    await txnQueue.push(async tx => {
       await Promise.all([checkEncoding(tx), fetchVersion(tx)])
     })
     callback(null)
@@ -206,12 +206,11 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
 
     const migrated = dbVersion < ADAPTER_VERSION
     if (migrated) {
-      await db.execute(
-        'UPDATE ' + META_STORE + ' SET db_version = ' + ADAPTER_VERSION
-      )
+      db.exec('UPDATE ' + META_STORE + ' SET db_version = ' + ADAPTER_VERSION)
     }
-    const result = await db.execute('SELECT dbid FROM ' + META_STORE)
-    instanceId = result.rows[0]!.dbid as string
+    const stmt = db.prepare('SELECT dbid FROM ' + META_STORE)
+    const result = stmt.all()
+    instanceId = (result[0] as any).dbid as string
     onGetInstanceId()
   }
 
@@ -233,7 +232,7 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
         callback(null, {
           doc_count: docCount,
           update_seq: seq,
-          sqlite_encoding: encoding,
+          sqlite_encoding: encoding
         })
       } catch (e: any) {
         handleSQLiteError(e, callback)
@@ -272,8 +271,8 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
     let metadata: any
     const tx: Transaction = opts.ctx
     if (!tx) {
-      readTransaction(async (txn) => {
-        return new Promise((resolve) => {
+      readTransaction(async txn => {
+        return new Promise(resolve => {
           api._get(
             id,
             Object.assign({ ctx: txn }, opts),
@@ -326,7 +325,7 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
     }
 
     tx.execute(sql, sqlArgs)
-      .then((results) => {
+      .then(results => {
         if (!results.rows?.length) {
           const missingErr = createError(MISSING_DOC, 'missing')
           return finish(missingErr)
@@ -344,7 +343,7 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
         )
         finish(null)
       })
-      .catch((e) => {
+      .catch(e => {
         // createError will throw in RN 0.76.3
         // https://github.com/facebook/hermes/issues/1496
         return finish(e)
@@ -418,7 +417,7 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
           const doc: any = {
             id: id,
             key: id,
-            value: { rev: winningRev },
+            value: { rev: winningRev }
           }
           if (opts.include_docs) {
             doc.doc = data
@@ -529,7 +528,7 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
         const returnVal: any = {
           total_rows: totalRows,
           offset: opts.skip,
-          rows: results,
+          rows: results
         }
 
         if (opts.update_seq) {
@@ -552,7 +551,7 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
       return {
         cancel: () => {
           sqliteChanges.removeListener(api._name, id)
-        },
+        }
       }
     }
 
@@ -649,7 +648,7 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
           if (!opts.continuous) {
             opts.complete(null, {
               results,
-              last_seq: lastSeq,
+              last_seq: lastSeq
             })
           }
         } catch (e: any) {
@@ -679,7 +678,7 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
     const type = attachment.content_type
     const sql =
       'SELECT escaped, body AS body FROM ' + ATTACH_STORE + ' WHERE digest=?'
-    tx.execute(sql, [digest]).then((result) => {
+    tx.execute(sql, [digest]).then(result => {
       const item = result.rows[0]!
       const data = item.body
       if (opts.binary) {
@@ -863,9 +862,9 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
           ATTACH_STORE,
           META_STORE,
           LOCAL_STORE,
-          ATTACH_AND_SEQ_STORE,
+          ATTACH_AND_SEQ_STORE
         ]
-        stores.forEach((store) => {
+        stores.forEach(store => {
           tx.execute('DROP TABLE IF EXISTS ' + store, [])
         })
         callback(null, { ok: true })
@@ -906,7 +905,7 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
       })
     }
 
-    attachments.forEach((att) => {
+    attachments.forEach(att => {
       if (opts.attachments && opts.include_docs) {
         fetchAttachment(doc, att)
       } else {
