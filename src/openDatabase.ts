@@ -4,6 +4,7 @@ import { TransactionQueue } from './transactionQueue'
 export type OpenDatabaseOptions = Database.Options & {
   name: string
   revs_limit?: number
+  auto_compaction?: boolean
 }
 type OpenDatabaseResult =
   | {

@@ -289,7 +289,7 @@ describe('basics', () => {
         _rev: 'undefined',
         another: 'test'
       })
-    ).rejects.toThrow(/bad_request/)
+    ).rejects.toThrow(/Invalid rev format/)
   })
 
   it('Doc validation', async () => {
@@ -300,7 +300,9 @@ describe('basics', () => {
       { _bing: { 'wha?': 'soda can' } }
     ]
     const db = new PouchDB(dbName, { adapter: 'sqlite3' })
-    await expect(db.bulkDocs(bad_docs)).rejects.toThrow(/Bad special document member/)
+    await expect(db.bulkDocs(bad_docs)).rejects.toThrow(
+      /Bad special document member/
+    )
   })
 
   it('Replication fields', async () => {
@@ -470,7 +472,7 @@ describe('basics', () => {
     expect(docs.total_rows).toBe(2)
     await db.destroy()
     const db3 = new PouchDB(dbName, { adapter: 'sqlite3' })
-    await expect(db3.get(doc._id)).rejects.toThrow(/not_found/)
+    await expect(db3.get(doc._id)).rejects.toThrow(/missing/)
   })
 
   it('Cant add docs with empty ids', async () => {

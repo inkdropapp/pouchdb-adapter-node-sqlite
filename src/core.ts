@@ -85,13 +85,12 @@ const sqliteChanges = new Changes()
 
 function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
   // @ts-ignore
-  let api = this as any
+  const api = this as any
   let db: InstanceType<typeof Database>
   // @ts-ignore
   let txnQueue: TransactionQueue
   let instanceId: string
   let encoding: string = 'UTF-8'
-  api.auto_compaction = false
 
   api._name = opts.name
   logger.debug('Creating SqlPouch instance: %s', api._name, opts)
