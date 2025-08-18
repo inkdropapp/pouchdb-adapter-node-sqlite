@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "outDir": "./lib-test",
+    "rootDir": "."
+  },
+  "include": ["tests/**/*", "src/**/*"],
+  "files": ["tests/global.d.ts"]
+}

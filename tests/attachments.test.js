@@ -1,14 +1,18 @@
 'use strict'
 
-const should = require('chai').should()
+const chai = require('chai')
+const chaiAsPromised = require('chai-as-promised')
+const should = chai.should()
+const PouchDB = require('pouchdb')
+const testUtils = require('./utils')
+chai.use(chaiAsPromised.default)
 
-var adapters = ['local', 'http']
-var repl_adapters = [
-  ['local', 'http'],
-  ['http', 'http'],
-  ['http', 'local'],
-  ['local', 'local']
-]
+// Register the SQLite3 adapter
+const SQLite3Adapter = require('../lib/index')
+PouchDB.plugin(SQLite3Adapter)
+
+var adapters = ['sqlite3']
+var repl_adapters = [['sqlite3']]
 
 var icons = [
   'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAABIAAAASABGyWs+AAAACXZwQWcAAAAQAAAAEABcxq3DAAAC8klEQVQ4y6WTS2hcZQCFv//eO++ZpDMZZjKdZB7kNSUpeWjANikoWiMUtEigBdOFipS6Ercu3bpTKF23uGkWBUGsoBg1KRHapjU0U81rpp3ESdNMZu6dx70zc38XdSFYVz1wNmdxzuKcAy8I8RxNDfs705ne5FmX0+mXUtK0mka2kLvxRC9vAe3nGmRiCQ6reux4auDi6ZenL0wOjaa6uoKK2+kgv1O0l1dvby/8/tvVe1t/XAn6ArvZ3fyzNIBjsQS5YiH6/ul3v/z0/AcfTx8fC24+zgvV4SXccYTtYlGM9MSDMydee1W27OQPd5d+Hujure4bZRQVeLCTY2p44tJ7M2/Pjg1lOLQkXy2scP3OQ1b3Snzx3SK/PCoxOphh7q13ZqeGJy492MmhAkoyHMUlRN8b4yfnBnqSWLqJItzkXZPoWhzF4WZdjGJ6+7H0OoPxFG9OnppzCtGXCEdRZ16axu1yffjRmfPnYqEw7WIdj1OlO6wx1e0g7hckO1ReH4wSrkgUVcEfDITub6w9Gus7tqS4NAcOVfMpCFq2jdrjwxv2cG48SejPFe59/gmnyuuMHA0ien0oR1x0BgJ4XG5fwO9Hk802sm3TbFiYVhNNU1FUBYCBsRNEmiad469gYyNUgRDPipNIQKKVajo1s1F9WjqgVjZQELg9Ek3TUFNHCaXnEEiQEvkPDw4PqTfMalk3UKt1g81ioRgLRc6MxPtDbdtGKgIhBdgSKW2kLWm327SaLayGxfzCzY2vf/zms0pVLyn7lQOadbmxuHb7WrawhW220J+WKZXK6EaNsl7F0GsYep1q3eTW6grfLv90zZRyI7dfRDNtSPdE+av05PL8re+HgdlMPI2wJXrDRAACgdVusfZ4k+uLN+eXs/cvp7oitP895UQogt6oxYZiiYsnMxMXpjPjqaC/QwEoGRX71+yd7aXs3asPd/NXAm7vbv5g7//P1OHxpvsj8bMep8sPULdMY32vcKNSr/3nTC+MvwEdhUhhkKTyPgAAAEJ0RVh0Y29tbWVudABGaWxlIHNvdXJjZTogaHR0cDovL3d3dy5zc2J3aWtpLmNvbS9GaWxlOktpcmJ5SGVhZFNTQkIucG5nSbA1rwAAACV0RVh0Y3JlYXRlLWRhdGUAMjAxMC0xMi0xNFQxNjozNDoxMCswMDowMDpPBjcAAAAldEVYdG1vZGlmeS1kYXRlADIwMTAtMTAtMDdUMjA6NTA6MzYrMDA6MDCjC6s7AAAAAElFTkSuQmCC',
@@ -2500,7 +2504,7 @@ adapters.forEach(function (adapter) {
       }
       should.not.exist(res)
 
-      if (adapter === 'local') {
+      if (adapter === 'sqlite3') {
         err.message.should.equal('missing')
         // TODO indexeddb errors should probably have .reason set
         if (db.adapter !== 'indexeddb') {
@@ -2541,7 +2545,7 @@ adapters.forEach(function (adapter) {
       }
       should.not.exist(res)
 
-      if (adapter === 'local') {
+      if (adapter === 'sqlite3') {
         err.message.should.equal('missing')
         // TODO indexeddb errors should probably have .reason set
         if (db.adapter !== 'indexeddb') {
@@ -2582,7 +2586,7 @@ adapters.forEach(function (adapter) {
       }
       should.not.exist(res)
 
-      if (adapter === 'local') {
+      if (adapter === 'sqlite3') {
         err.message.should.equal('missing')
         // TODO indexeddb errors should probably have .reason set
         if (db.adapter !== 'indexeddb') {
@@ -2617,7 +2621,7 @@ adapters.forEach(function (adapter) {
 
       const doc = await db.get('_local/bin_doc', { attachments: true })
 
-      if (adapter === 'local') {
+      if (adapter === 'sqlite3') {
         doc._attachments['foo.txt'].content_type.should.equal('text/plain')
         doc._attachments['foo.txt'].data.should.equal(
           'VGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHRleHQ='
@@ -2652,7 +2656,7 @@ adapters.forEach(function (adapter) {
         .put({
           _id: 'doc',
           _attachments: {
-            '1': {
+            1: {
               content_type: 'application/octet-stream',
               data: testUtils.btoa('1\u00002\u00013\u0002')
             }
@@ -2694,7 +2698,7 @@ adapters.forEach(function (adapter) {
         .put({
           _id: 'doc',
           _attachments: {
-            '1': {
+            1: {
               content_type: 'application/octet-stream',
               data: testUtils.btoa('1\u00002\u00013\u0002')
             }

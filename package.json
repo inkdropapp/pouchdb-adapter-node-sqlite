@@ -6,7 +6,9 @@
   "types": "lib/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "jest",
+    "test": "mocha tests/all_docs.test.js",
+    "test:tsc": "tsc -p tsconfig.test.json && mocha lib-test/tests/**/*.test.js",
+    "test:watch": "mocha --require ts-node/register --require ./tests/setup.ts tests/**/*.test.ts --watch",
     "lint": "eslint src --ext .ts",
     "prepare": "npm run build"
   },
@@ -32,15 +34,19 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "@types/jest": "^30.0.0",
+    "@types/chai": "^5.2.2",
+    "@types/chai-as-promised": "^8.0.2",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^24.1.0",
     "@types/pouchdb": "^6.4.2",
+    "chai": "^5.2.1",
+    "chai-as-promised": "^8.0.1",
     "eslint": "^9.32.0",
     "eslint-config-prettier": "^10.1.8",
-    "jest": "^30.0.5",
+    "mocha": "^11.7.1",
     "pouchdb": "^9.0.0",
     "prettier": "^3.6.2",
-    "ts-jest": "^29.4.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0"
   }
