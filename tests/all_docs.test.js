@@ -1,8 +1,17 @@
-import PouchDB from 'pouchdb'
-import * as testUtils from './utils'
+const chai = require('chai')
+const chaiAsPromised = require('chai-as-promised')
+const should = chai.should()
+const PouchDB = require('pouchdb')
+const testUtils = require('./utils')
+chai.use(chaiAsPromised.default)
+
+// Register the SQLite3 adapter
+const SQLite3Adapter = require('../lib/index')
+
+PouchDB.plugin(SQLite3Adapter)
 
 // Only test local adapter (sqlite3)
-var adapters = ['local']
+var adapters = ['sqlite3']
 
 adapters.forEach(function (adapter) {
   describe('test.all_docs.js-' + adapter, function () {
@@ -24,7 +33,7 @@ adapters.forEach(function (adapter) {
     ]
 
     it('Testing all docs', function (done) {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       testUtils.writeDocs(
         db,
         JSON.parse(JSON.stringify(origDocs)),
@@ -34,8 +43,8 @@ adapters.forEach(function (adapter) {
             var rows = result.rows
             result.total_rows.should.equal(4, 'correct number of results')
             for (var i = 0; i < rows.length; i++) {
-              rows[i].id.should.be.at.least('0')
-              rows[i].id.should.be.at.most('4')
+              Number(rows[i].id).should.be.at.least(2)
+              Number(rows[i].id).should.be.at.most(4)
             }
             db.allDocs(
               {
@@ -43,6 +52,7 @@ adapters.forEach(function (adapter) {
                 include_docs: true
               },
               function (err, all) {
+                console.log('[2] all docs done!!!!', result)
                 all.rows.should.have.length(
                   2,
                   'correct number when opts.startkey set'
@@ -89,7 +99,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('Testing allDocs opts.keys', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       function keyFunc(doc) {
         return doc.key
       }
@@ -169,7 +179,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('Testing allDocs opts.keys with skip', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       return db
         .bulkDocs(origDocs)
         .then(function () {
@@ -186,7 +196,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('Testing allDocs opts.keys with limit', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       return db
         .bulkDocs(origDocs)
         .then(function () {
@@ -212,7 +222,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('Testing allDocs invalid opts.keys', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       return db
         .allDocs({ keys: 1234 })
         .then(function () {
@@ -224,7 +234,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('Testing deleting in changes', function (done) {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
 
       db.info(function (err, info) {
         var update_seq = info.update_seq
@@ -260,7 +270,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('Testing updating in changes', function (done) {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
 
       db.info(function (err, info) {
         var update_seq = info.update_seq
@@ -293,7 +303,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('Testing include docs', function (done) {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       testUtils.writeDocs(
         db,
         JSON.parse(JSON.stringify(origDocs)),
@@ -315,7 +325,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('Testing conflicts', function (done) {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       testUtils.writeDocs(
         db,
         JSON.parse(JSON.stringify(origDocs)),
@@ -401,7 +411,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('test basic collation', function (done) {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       var docs = {
         docs: [
           { _id: 'z', foo: 'z' },
@@ -423,7 +433,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('3883 start_key end_key aliases', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       var docs = [
         { _id: 'a', foo: 'a' },
         { _id: 'z', foo: 'z' }
@@ -440,7 +450,7 @@ adapters.forEach(function (adapter) {
 
     it('test total_rows with a variety of criteria', function (done) {
       this.timeout(20000)
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
 
       var docs = [
         { _id: '0' },
@@ -587,7 +597,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('test total_rows with a variety of criteria * 100', function (done) {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
 
       const docs = []
       for (let i = 0; i < 1000; ++i) {
@@ -793,7 +803,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('test total_rows with both skip and limit', function (done) {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       var docs = {
         docs: [
           { _id: 'w', foo: 'w' },
@@ -835,7 +845,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('test limit option and total_rows', function (done) {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       var docs = {
         docs: [
           { _id: 'z', foo: 'z' },
@@ -858,7 +868,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('test escaped startkey/endkey', function (done) {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       var id1 = '"weird id!" a'
       var id2 = '"weird id!" z'
       var docs = {
@@ -888,7 +898,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('test "key" option', function (done) {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       db.bulkDocs(
         {
           docs: [{ _id: '0' }, { _id: '1' }, { _id: '2' }]
@@ -934,7 +944,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('test inclusive_end=false', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       var docs = [{ _id: '1' }, { _id: '2' }, { _id: '3' }, { _id: '4' }]
       return db
         .bulkDocs({ docs })
@@ -996,7 +1006,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('test descending with startkey/endkey', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       return db
         .bulkDocs([
           { _id: 'a' },
@@ -1058,7 +1068,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('#3082 test wrong num results returned', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       var docs = []
       for (var i = 0; i < 1000; i++) {
         docs.push({})
@@ -1113,7 +1123,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('test empty db', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       return db.allDocs().then(function (res) {
         res.rows.should.have.length(0)
         res.total_rows.should.equal(0)
@@ -1121,7 +1131,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('test after db close', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       return db.close().then(function () {
         return db.allDocs().catch(function (err) {
           err.message.should.equal('database is closed')
@@ -1132,7 +1142,7 @@ adapters.forEach(function (adapter) {
     if (adapter === 'local') {
       // chrome doesn't like \u0000 in URLs
       it('test unicode ids and revs', function () {
-        var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+        var db = new PouchDB(dbs.name)
         var id = 'baz\u0000'
         var rev
         return db
@@ -1156,7 +1166,7 @@ adapters.forEach(function (adapter) {
     }
 
     it('5793 _conflicts should not exist if no conflicts', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       return db
         .put({
           _id: '0',
@@ -1174,7 +1184,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('#6230 Test allDocs opts update_seq: false', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       return db
         .bulkDocs(origDocs)
         .then(function () {
@@ -1189,7 +1199,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('#6230 Test allDocs opts update_seq: true', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
 
       return db
         .bulkDocs(origDocs)
@@ -1228,7 +1238,7 @@ adapters.forEach(function (adapter) {
     })
 
     it('#6230 Test allDocs opts with update_seq missing', function () {
-      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var db = new PouchDB(dbs.name)
       return db
         .bulkDocs(origDocs)
         .then(function () {
