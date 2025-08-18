@@ -285,6 +285,7 @@ var PouchDB = require('pouchdb')
 var pouchUtils = require('pouchdb-utils')
 var pouchErrors = require('pouchdb-errors')
 var pouchBinaryUtils = require('pouchdb-binary-utils')
+var coverageUtils = require('./utils_test-for-coverage')
 
 testUtils.binaryStringToBlob = pouchBinaryUtils.binaryStringToBlobOrBuffer
 testUtils.btoa = pouchBinaryUtils.btoa
@@ -294,7 +295,7 @@ testUtils.uuid = pouchUtils.uuid
 testUtils.rev = pouchUtils.rev
 testUtils.errors = pouchErrors
 testUtils.assign = Object.assign
-testUtils.generateReplicationId = pouchUtils.generateReplicationId
+testUtils.generateReplicationId = coverageUtils.generateReplicationId
 
 testUtils.makeBlob = function (data, type) {
   if (testUtils.isNode()) {

@@ -13,3 +13,4 @@ tests-from-pouchdb
 temp-*.sqlite*
 test-*.sqlite*
 testdb_*
+test_repl*

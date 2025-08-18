@@ -595,124 +595,103 @@ adapters.forEach(function (adapters) {
         })
       })
 
-      it('Test disable checkpoints on both source and target', function (done) {
+      it('Test disable checkpoints on both source and target', async function () {
         var db = new PouchDB(dbs.name)
         var remote = new PouchDB(dbs.remote)
 
-        db.bulkDocs({ docs })
-          .then(function () {
-            PouchDB.replicate(db, remote, { checkpoint: false })
-              .on('error', done)
-              .on('complete', function () {
-                testUtils
-                  .generateReplicationId(db, remote, {})
-                  .then(function (replicationId) {
-                    ensureCheckpointIsMissing(db, replicationId)
-                      .then(function () {
-                        return ensureCheckpointIsMissing(remote, replicationId)
-                      })
-                      .then(done)
-                      .catch(done)
-                  })
-                  .catch(done)
-              })
-          })
-          .catch(done)
+        await db.bulkDocs({ docs })
 
-        function ensureCheckpointIsMissing(db, replicationId) {
-          return db
-            .get(replicationId)
-            .then(function () {
-              throw new Error(
-                'Found a checkpoint that should not exist for db ' + db.name
-              )
-            })
-            .catch(function (error) {
-              if (error.status === 404) {
-                return
-              } else {
-                throw error
-              }
-            })
+        await new Promise((resolve, reject) => {
+          PouchDB.replicate(db, remote, { checkpoint: false })
+            .on('error', reject)
+            .on('complete', resolve)
+        })
+
+        const replicationId = await testUtils.generateReplicationId(
+          db,
+          remote,
+          {}
+        )
+
+        async function ensureCheckpointIsMissing(db, replicationId) {
+          try {
+            await db.get(replicationId)
+            throw new Error(
+              'Found a checkpoint that should not exist for db ' + db.name
+            )
+          } catch (error) {
+            if (error.status !== 404) {
+              throw error
+            }
+          }
+        }
+
+        await ensureCheckpointIsMissing(db, replicationId)
+        await ensureCheckpointIsMissing(remote, replicationId)
+      })
+
+      it('Test write checkpoints on source only', async function () {
+        var db = new PouchDB(dbs.name)
+        var remote = new PouchDB(dbs.remote)
+
+        await db.bulkDocs({ docs })
+
+        await new Promise((resolve, reject) => {
+          PouchDB.replicate(db, remote, { checkpoint: 'source' })
+            .on('error', reject)
+            .on('complete', resolve)
+        })
+
+        const replicationId = await testUtils.generateReplicationId(
+          db,
+          remote,
+          {}
+        )
+
+        // Check that checkpoint exists on source
+        await db.get(replicationId)
+
+        // Check that checkpoint does not exist on target
+        try {
+          await remote.get(replicationId)
+          throw new Error('Found a checkpoint on target that should not exist')
+        } catch (error) {
+          if (error.status !== 404) {
+            throw error
+          }
         }
       })
 
-      it('Test write checkpoints on source only', function (done) {
+      it('Test write checkpoints on target only', async function () {
         var db = new PouchDB(dbs.name)
         var remote = new PouchDB(dbs.remote)
 
-        db.bulkDocs({ docs })
-          .then(function () {
-            PouchDB.replicate(db, remote, { checkpoint: 'source' })
-              .on('error', done)
-              .on('complete', function () {
-                testUtils
-                  .generateReplicationId(db, remote, {})
-                  .then(function (replicationId) {
-                    db.get(replicationId)
-                      .then(function () {
-                        remote
-                          .get(replicationId)
-                          .then(function () {
-                            done(
-                              new Error(
-                                'Found a checkpoint on target that should not exist'
-                              )
-                            )
-                          })
-                          .catch(function (error) {
-                            if (error.status === 404) {
-                              done()
-                            } else {
-                              done(error)
-                            }
-                          })
-                      })
-                      .catch(done)
-                  })
-                  .catch(done)
-              })
-          })
-          .catch(done)
-      })
+        await db.bulkDocs({ docs })
 
-      it('Test write checkpoints on target only', function (done) {
-        var db = new PouchDB(dbs.name)
-        var remote = new PouchDB(dbs.remote)
+        await new Promise((resolve, reject) => {
+          PouchDB.replicate(db, remote, { checkpoint: 'target' })
+            .on('error', reject)
+            .on('complete', resolve)
+        })
 
-        db.bulkDocs({ docs })
-          .then(function () {
-            PouchDB.replicate(db, remote, { checkpoint: 'target' })
-              .on('error', done)
-              .on('complete', function () {
-                testUtils
-                  .generateReplicationId(db, remote, {})
-                  .then(function (replicationId) {
-                    remote
-                      .get(replicationId)
-                      .then(function () {
-                        db.get(replicationId)
-                          .then(function () {
-                            done(
-                              new Error(
-                                'Found a checkpoint on source that should not exist'
-                              )
-                            )
-                          })
-                          .catch(function (error) {
-                            if (error.status === 404) {
-                              done()
-                            } else {
-                              done(error)
-                            }
-                          })
-                      })
-                      .catch(done)
-                  })
-                  .catch(done)
-              })
-          })
-          .catch(done)
+        const replicationId = await testUtils.generateReplicationId(
+          db,
+          remote,
+          {}
+        )
+
+        // Check that checkpoint exists on target
+        await remote.get(replicationId)
+
+        // Check that checkpoint does not exist on source
+        try {
+          await db.get(replicationId)
+          throw new Error('Found a checkpoint on source that should not exist')
+        } catch (error) {
+          if (error.status !== 404) {
+            throw error
+          }
+        }
       })
 
       it('Test replication resumes when checkpointing is enabled', function (done) {
