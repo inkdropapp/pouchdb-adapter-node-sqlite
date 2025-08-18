@@ -32,70 +32,57 @@ adapters.forEach(function (adapter) {
       { _id: '2', a: 3, b: 9 }
     ]
 
-    it('Testing all docs', function (done) {
+    it('Testing all docs', async function () {
       var db = new PouchDB(dbs.name)
-      testUtils.writeDocs(
-        db,
-        JSON.parse(JSON.stringify(origDocs)),
-        function () {
-          db.allDocs(function (err, result) {
-            should.not.exist(err)
-            var rows = result.rows
-            result.total_rows.should.equal(4, 'correct number of results')
-            for (var i = 0; i < rows.length; i++) {
-              Number(rows[i].id).should.be.at.least(2)
-              Number(rows[i].id).should.be.at.most(4)
-            }
-            db.allDocs(
-              {
-                startkey: '2',
-                include_docs: true
-              },
-              function (err, all) {
-                console.log('[2] all docs done!!!!', result)
-                all.rows.should.have.length(
-                  2,
-                  'correct number when opts.startkey set'
-                )
-                all.rows[0].id.should.equal(
-                  '2',
-                  'correct docs when opts.startkey set'
-                )
-                var opts = {
-                  startkey: 'org.couchdb.user:',
-                  endkey: 'org.couchdb.user;'
-                }
-                db.allDocs(opts, function (err, raw) {
-                  raw.rows.should.have.length(0, 'raw collation')
-                  var ids = ['0', '3', '1', '2']
-                  db.changes()
-                    .on('complete', function (changes) {
-                      // order of changes is not guaranteed in a
-                      // clustered changes feed
-                      changes.results.forEach(function (row) {
-                        ids.should.include(row.id, 'seq order')
-                      })
-                      db.changes({
-                        descending: true
-                      })
-                        .on('complete', function (changes) {
-                          // again, order is not guaranteed so
-                          // unsure if this is a useful test
-                          ids = ['2', '1', '3', '0']
-                          changes.results.forEach(function (row) {
-                            ids.should.include(row.id, 'descending=true')
-                          })
-                          done()
-                        })
-                        .on('error', done)
-                    })
-                    .on('error', done)
-                })
-              }
-            )
-          })
-        }
-      )
+      await testUtils.writeDocsPromise(db, JSON.parse(JSON.stringify(origDocs)))
+
+      const result = await db.allDocs()
+      var rows = result.rows
+      result.total_rows.should.equal(4, 'correct number of results')
+      for (var i = 0; i < rows.length; i++) {
+        Number(rows[i].id).should.be.at.least(0)
+        Number(rows[i].id).should.be.at.most(3)
+      }
+
+      const all = await db.allDocs({
+        startkey: '2',
+        include_docs: true
+      })
+      all.rows.should.have.length(2, 'correct number when opts.startkey set')
+      all.rows[0].id.should.equal('2', 'correct docs when opts.startkey set')
+
+      var opts = {
+        startkey: 'org.couchdb.user:',
+        endkey: 'org.couchdb.user;'
+      }
+      const raw = await db.allDocs(opts)
+      raw.rows.should.have.length(0, 'raw collation')
+
+      var ids = ['0', '3', '1', '2']
+      const changes1 = await new Promise((resolve, reject) => {
+        db.changes().on('complete', resolve).on('error', reject)
+      })
+
+      // order of changes is not guaranteed in a
+      // clustered changes feed
+      changes1.results.forEach(function (row) {
+        ids.should.include(row.id, 'seq order')
+      })
+
+      const changes2 = await new Promise((resolve, reject) => {
+        db.changes({
+          descending: true
+        })
+          .on('complete', resolve)
+          .on('error', reject)
+      })
+
+      // again, order is not guaranteed so
+      // unsure if this is a useful test
+      ids = ['2', '1', '3', '0']
+      changes2.results.forEach(function (row) {
+        ids.should.include(row.id, 'descending=true')
+      })
     })
 
     it('Testing allDocs opts.keys', function () {
@@ -1088,7 +1075,9 @@ adapters.forEach(function (adapter) {
             return
           }
           if (lastkey) {
-            res.rows[0].key.should.be.above(lastkey)
+            res.rows[0].key.should.satisfy(function (key) {
+              return key > lastkey
+            }, 'key should be greater than lastkey')
           }
           res.rows.should.have.length(100)
           lastkey = res.rows.pop().key
@@ -1113,7 +1102,9 @@ adapters.forEach(function (adapter) {
                   if (!res.rows.length) {
                     return
                   }
-                  res.rows[0].key.should.be.above(key)
+                  res.rows[0].key.should.satisfy(function (resKey) {
+                    return resKey > key
+                  }, 'key should be greater than startkey')
                   res.rows.should.have.length(100)
                 })
             })
