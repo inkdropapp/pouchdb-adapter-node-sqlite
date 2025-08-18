@@ -211,6 +211,15 @@ testUtils.writeDocs = function (db, docs, callback, res) {
   })
 }
 
+testUtils.writeDocsPromise = function (db, docs) {
+  return new Promise(function (resolve, reject) {
+    testUtils.writeDocs(db, docs, function (err, res) {
+      if (err) return reject(err)
+      resolve(res)
+    })
+  })
+}
+
 // Borrowed from: http://stackoverflow.com/a/840849
 testUtils.eliminateDuplicates = function (arr) {
   var i,
@@ -280,7 +289,7 @@ var pouchBinaryUtils = require('pouchdb-binary-utils')
 testUtils.binaryStringToBlob = pouchBinaryUtils.binaryStringToBlobOrBuffer
 testUtils.btoa = pouchBinaryUtils.btoa
 testUtils.atob = pouchBinaryUtils.atob
-testUtils.ajax = PouchDB.ajax || function() {} // ajax might not be available in all builds
+testUtils.ajax = PouchDB.ajax || function () {} // ajax might not be available in all builds
 testUtils.uuid = pouchUtils.uuid
 testUtils.rev = pouchUtils.rev
 testUtils.errors = pouchErrors
@@ -349,4 +358,3 @@ testUtils.sortById = function (a, b) {
 }
 
 module.exports = testUtils
-
