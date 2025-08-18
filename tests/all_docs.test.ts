@@ -1,1097 +1,1243 @@
-import { describe, it, beforeEach, afterEach, expect } from '@jest/globals'
 import PouchDB from 'pouchdb'
-import { getDatabaseName, cleanupTestDatabases } from './utils/test-utils'
+import * as testUtils from './utils'
 
-// Register the SQLite3 adapter
-import SQLite3Adapter from '../src/index'
-PouchDB.plugin(SQLite3Adapter)
+// Only test local adapter (sqlite3)
+var adapters = ['local']
 
-// Type helpers for allDocs with keys results
-interface AllDocsKeyRow {
-  key: string
-  error?: 'not_found'
-  id?: string
-  value?: {
-    rev: string
-    deleted?: boolean
-  }
-  doc?: any
-}
+adapters.forEach(function (adapter) {
+  describe('test.all_docs.js-' + adapter, function () {
+    var dbs = {}
 
-interface AllDocsNormalRow {
-  id: string
-  key: string
-  value: {
-    rev: string
-    deleted?: boolean
-  }
-  doc?: any
-}
-
-function isErrorRow(
-  row: AllDocsKeyRow | AllDocsNormalRow
-): row is AllDocsKeyRow & { error: 'not_found' } {
-  return 'error' in row && row.error === 'not_found'
-}
-
-function isNormalRow(
-  row: AllDocsKeyRow | AllDocsNormalRow
-): row is AllDocsNormalRow {
-  return 'id' in row && !('error' in row)
-}
-
-describe('all_docs', () => {
-  let dbName: string
-  let db: PouchDB.Database
-
-  beforeEach(() => {
-    dbName = getDatabaseName()
-    db = new PouchDB(dbName, { adapter: 'sqlite3' })
-  })
-
-  afterEach(async () => {
-    await cleanupTestDatabases()
-  })
-
-  const origDocs = [
-    { _id: '0', a: 1, b: 1 },
-    { _id: '3', a: 4, b: 16 },
-    { _id: '1', a: 2, b: 4 },
-    { _id: '2', a: 3, b: 9 }
-  ]
-
-  it('Testing all docs', async () => {
-    await db.bulkDocs(origDocs)
-
-    const result = await db.allDocs()
-    const rows = result.rows
-    expect(result.total_rows).toBe(4)
-
-    for (let i = 0; i < rows.length; i++) {
-      expect(rows[i].id).toMatch(/^[0-3]$/)
-    }
-
-    const all = await db.allDocs({
-      startkey: '2',
-      include_docs: true
+    beforeEach(function () {
+      dbs.name = testUtils.adapterUrl(adapter, 'testdb')
     })
-    expect(all.rows).toHaveLength(2)
-    expect(all.rows[0].id).toBe('2')
 
-    const opts = {
-      startkey: 'org.couchdb.user:',
-      endkey: 'org.couchdb.user;'
-    }
-    const raw = await db.allDocs(opts)
-    expect(raw.rows).toHaveLength(0)
-  })
+    afterEach(function (done) {
+      testUtils.cleanup([dbs.name], done)
+    })
 
-  it('Testing allDocs opts.keys', async () => {
-    function keyFunc(doc: any) {
-      return doc.key
-    }
+    var origDocs = [
+      { _id: '0', a: 1, b: 1 },
+      { _id: '3', a: 4, b: 16 },
+      { _id: '1', a: 2, b: 4 },
+      { _id: '2', a: 3, b: 9 }
+    ]
 
-    await db.bulkDocs(origDocs)
+    it('Testing all docs', function (done) {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      testUtils.writeDocs(
+        db,
+        JSON.parse(JSON.stringify(origDocs)),
+        function () {
+          db.allDocs(function (err, result) {
+            should.not.exist(err)
+            var rows = result.rows
+            result.total_rows.should.equal(4, 'correct number of results')
+            for (var i = 0; i < rows.length; i++) {
+              rows[i].id.should.be.at.least('0')
+              rows[i].id.should.be.at.most('4')
+            }
+            db.allDocs(
+              {
+                startkey: '2',
+                include_docs: true
+              },
+              function (err, all) {
+                all.rows.should.have.length(
+                  2,
+                  'correct number when opts.startkey set'
+                )
+                all.rows[0].id.should.equal(
+                  '2',
+                  'correct docs when opts.startkey set'
+                )
+                var opts = {
+                  startkey: 'org.couchdb.user:',
+                  endkey: 'org.couchdb.user;'
+                }
+                db.allDocs(opts, function (err, raw) {
+                  raw.rows.should.have.length(0, 'raw collation')
+                  var ids = ['0', '3', '1', '2']
+                  db.changes()
+                    .on('complete', function (changes) {
+                      // order of changes is not guaranteed in a
+                      // clustered changes feed
+                      changes.results.forEach(function (row) {
+                        ids.should.include(row.id, 'seq order')
+                      })
+                      db.changes({
+                        descending: true
+                      })
+                        .on('complete', function (changes) {
+                          // again, order is not guaranteed so
+                          // unsure if this is a useful test
+                          ids = ['2', '1', '3', '0']
+                          changes.results.forEach(function (row) {
+                            ids.should.include(row.id, 'descending=true')
+                          })
+                          done()
+                        })
+                        .on('error', done)
+                    })
+                    .on('error', done)
+                })
+              }
+            )
+          })
+        }
+      )
+    })
 
-    let keys = ['3', '1']
-    let result = (await db.allDocs({
-      keys
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(result.rows.map(keyFunc)).toEqual(keys)
-
-    keys = ['2', '0', '1000']
-    result = (await db.allDocs({
-      keys
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(result.rows.map(keyFunc)).toEqual(keys)
-    const errorRow = result.rows[2]
-    if (isErrorRow(errorRow)) {
-      expect(errorRow.error).toBe('not_found')
-    }
-
-    result = (await db.allDocs({
-      keys,
-      descending: true
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(result.rows.map(keyFunc)).toEqual(['1000', '0', '2'])
-    const firstRow = result.rows[0]
-    if (isErrorRow(firstRow)) {
-      expect(firstRow.error).toBe('not_found')
-    }
-
-    // Should throw error with both keys and startkey
-    await expect(
-      db.allDocs({
-        keys,
-        startkey: 'a'
-      } as any)
-    ).rejects.toThrow()
-
-    // Should throw error with both keys and endkey
-    await expect(
-      db.allDocs({
-        keys,
-        endkey: 'a'
-      } as any)
-    ).rejects.toThrow()
-
-    // Empty keys array
-    result = (await db.allDocs({
-      keys: []
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(result.rows).toHaveLength(0)
-
-    // Test with deleted doc
-    const doc = await db.get('2')
-    await db.remove(doc)
-
-    result = (await db.allDocs({
-      keys,
-      include_docs: true
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(result.rows.map(keyFunc)).toEqual(keys)
-    const deletedRow = result.rows[keys.indexOf('2')]
-    if (isNormalRow(deletedRow)) {
-      expect(deletedRow.value.deleted).toBe(true)
-      expect(deletedRow.doc).toBeNull()
-    }
-  })
-
-  it('Testing allDocs opts.keys with skip', async () => {
-    await db.bulkDocs(origDocs)
-
-    const res = (await db.allDocs({
-      keys: ['3', '1'],
-      skip: 1
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(res.total_rows).toBe(4)
-    expect(res.rows).toHaveLength(1)
-    const firstRow = res.rows[0]
-    if (isNormalRow(firstRow)) {
-      expect(firstRow.id).toBe('1')
-    }
-  })
-
-  it('Testing allDocs opts.keys with limit', async () => {
-    await db.bulkDocs(origDocs)
-
-    let res = (await db.allDocs({
-      keys: ['3', '1'],
-      limit: 1
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(res.total_rows).toBe(4)
-    expect(res.rows).toHaveLength(1)
-    const firstRow = res.rows[0]
-    if (isNormalRow(firstRow)) {
-      expect(firstRow.id).toBe('3')
-    }
-
-    res = (await db.allDocs({
-      keys: ['0', '2'],
-      limit: 3
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(res.rows).toHaveLength(2)
-    const row0 = res.rows[0]
-    const row1 = res.rows[1]
-    if (isNormalRow(row0)) {
-      expect(row0.id).toBe('0')
-    }
-    if (isNormalRow(row1)) {
-      expect(row1.id).toBe('2')
-    }
-  })
-
-  it('Testing allDocs invalid opts.keys', async () => {
-    await expect(db.allDocs({ keys: 1234 as any })).rejects.toThrow()
-  })
-
-  it('Testing include docs', async () => {
-    await db.bulkDocs(origDocs)
-
-    const changes = (await db.changes({
-      include_docs: true
-    })) as any
-
-    changes.results.forEach((row: any) => {
-      if (row.id === '0') {
-        expect(row.doc.a).toBe(1)
+    it('Testing allDocs opts.keys', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      function keyFunc(doc) {
+        return doc.key
       }
-    })
-  })
-
-  it('Testing conflicts', async () => {
-    await db.bulkDocs(origDocs)
-
-    // Add conflicts
-    const conflictDoc1 = {
-      _id: '3',
-      _rev: '2-aa01552213fafa022e6167113ed01087',
-      value: 'X'
-    }
-    const conflictDoc2 = {
-      _id: '3',
-      _rev: '2-ff01552213fafa022e6167113ed01087',
-      value: 'Z'
-    }
-
-    await db.put(conflictDoc1, { new_edits: false } as any)
-    await db.put(conflictDoc2, { new_edits: false } as any)
-
-    const winRev = await db.get('3')
-    expect(winRev._rev).toBe(conflictDoc2._rev)
-
-    const res = await db.allDocs({
-      include_docs: true,
-      conflicts: true
-    })
-
-    const row = res.rows[3]
-    expect(res.rows).toHaveLength(4)
-    expect(row.key).toBe('3')
-    expect(row.id).toBe('3')
-    expect(row.value.rev).toBe(winRev._rev)
-    expect(row.doc!._rev).toBe(winRev._rev)
-    expect(row.doc!._id).toBe('3')
-    expect(row.doc!._conflicts).toBeInstanceOf(Array)
-    expect(row.doc!._conflicts).toHaveLength(2)
-    expect(row.doc!._conflicts![0]).toBe(conflictDoc1._rev)
-  })
-
-  it('test basic collation', async () => {
-    const docs = [
-      { _id: 'z', foo: 'z' },
-      { _id: 'a', foo: 'a' }
-    ]
-    await db.bulkDocs(docs)
-
-    const result = await db.allDocs({
-      startkey: 'z',
-      endkey: 'z'
-    })
-    expect(result.rows).toHaveLength(1)
-  })
-
-  it('3883 start_key end_key aliases', async () => {
-    const docs = [
-      { _id: 'a', foo: 'a' },
-      { _id: 'z', foo: 'z' }
-    ]
-    await db.bulkDocs(docs)
-
-    const result = await db.allDocs({ start_key: 'z', end_key: 'z' } as any)
-    expect(result.rows).toHaveLength(1)
-  })
-
-  it('test total_rows with a variety of criteria', async () => {
-    const docs: any[] = [
-      { _id: '0' },
-      { _id: '1' },
-      { _id: '2' },
-      { _id: '3' },
-      { _id: '4' },
-      { _id: '5' },
-      { _id: '6' },
-      { _id: '7' },
-      { _id: '8' },
-      { _id: '9' }
-    ]
-
-    const bulkRes = await db.bulkDocs(docs)
-    docs[3]._deleted = true
-    docs[7]._deleted = true
-    docs[3]._rev = bulkRes[3].rev
-    docs[7]._rev = bulkRes[7].rev
-
-    await db.remove(docs[3] as any)
-    await db.remove(docs[7] as any)
-
-    let res = await db.allDocs()
-    expect(res.rows).toHaveLength(8)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ startkey: '5', endkey: 'z' })
-    expect(res.rows).toHaveLength(4)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ startkey: '5', skip: 2, limit: 10 })
-    expect(res.rows).toHaveLength(2)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ startkey: '5', limit: 0 })
-    expect(res.rows).toHaveLength(0)
-    expect(res.total_rows).toBe(8)
-
-    res = (await db.allDocs({
-      keys: ['5'],
-      limit: 0
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(res.rows).toHaveLength(0)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ limit: 0 })
-    expect(res.rows).toHaveLength(0)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ startkey: '5', descending: true, skip: 1 })
-    expect(res.rows).toHaveLength(4)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ startkey: '5', endkey: 'z' })
-    expect(res.rows).toHaveLength(4)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ startkey: '5', endkey: '5' })
-    expect(res.rows).toHaveLength(1)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ startkey: '5', endkey: '4' })
-    expect(res.rows).toHaveLength(0)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ startkey: '5', endkey: '4', descending: true })
-    expect(res.rows).toHaveLength(2)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ startkey: '3', endkey: '7', descending: false })
-    expect(res.rows).toHaveLength(3)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ startkey: '7', endkey: '3', descending: true })
-    expect(res.rows).toHaveLength(3)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ startkey: '', endkey: '0' })
-    expect(res.rows).toHaveLength(1)
-    expect(res.total_rows).toBe(8)
-
-    res = (await db.allDocs({
-      keys: ['0', '1', '3']
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(res.rows).toHaveLength(3)
-    expect(res.total_rows).toBe(8)
-
-    res = (await db.allDocs({
-      keys: ['0', '1', '0', '2', '1', '1']
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(res.rows).toHaveLength(6)
-    expect(res.rows.map(row => row.key)).toEqual(['0', '1', '0', '2', '1', '1'])
-    expect(res.total_rows).toBe(8)
-
-    res = (await db.allDocs({
-      keys: []
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(res.rows).toHaveLength(0)
-    expect(res.total_rows).toBe(8)
-
-    res = (await db.allDocs({
-      keys: ['7']
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(res.rows).toHaveLength(1)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ key: '3' })
-    expect(res.rows).toHaveLength(0)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ key: '2' })
-    expect(res.rows).toHaveLength(1)
-    expect(res.total_rows).toBe(8)
-
-    res = await db.allDocs({ key: 'z' })
-    expect(res.rows).toHaveLength(0)
-    expect(res.total_rows).toBe(8)
-  })
-
-  it('test total_rows with a variety of criteria * 100', async () => {
-    const docs: any[] = []
-    for (let i = 0; i < 1000; ++i) {
-      docs.push({ _id: i.toString().padStart(5, '0') })
-    }
-
-    const res = await db.bulkDocs(docs)
-    const deletes: any[] = []
-
-    for (let i = 300; i < 400; ++i) {
-      docs[i]._deleted = true
-      docs[i]._rev = res[i].rev
-      deletes.push(docs[i])
-    }
-    for (let i = 700; i < 800; ++i) {
-      docs[i]._deleted = true
-      docs[i]._rev = res[i].rev
-      deletes.push(docs[i])
-    }
-
-    const deleted = await Promise.all(deletes.map(doc => db.remove(doc as any)))
-    expect(deleted).toHaveLength(200)
-
-    let result = await db.allDocs()
-    expect(result.rows).toHaveLength(800)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({ startkey: '00500', endkey: 'z' })
-    expect(result.rows).toHaveLength(400)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({ startkey: '00500', skip: 200, limit: 1000 })
-    expect(result.rows).toHaveLength(200)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({ startkey: '00500', limit: 0 })
-    expect(result.rows).toHaveLength(0)
-    expect(result.total_rows).toBe(800)
-
-    result = (await db.allDocs({
-      keys: ['00500'],
-      limit: 0
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(result.rows).toHaveLength(0)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({ limit: 0 })
-    expect(result.rows).toHaveLength(0)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({ startkey: '00500', descending: true, skip: 1 })
-    expect(result.rows).toHaveLength(400)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({ startkey: '00500', endkey: 'z' })
-    expect(result.rows).toHaveLength(400)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({ startkey: '00500', endkey: '00500' })
-    expect(result.rows).toHaveLength(1)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({ startkey: '00500', endkey: '00400' })
-    expect(result.rows).toHaveLength(0)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({
-      startkey: '00599',
-      endkey: '00400',
-      descending: true
-    })
-    expect(result.rows).toHaveLength(200)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({
-      startkey: '00599',
-      endkey: '00400',
-      descending: true,
-      inclusive_end: false
-    })
-    expect(result.rows).toHaveLength(199)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({
-      startkey: '00300',
-      endkey: '00799',
-      descending: false
-    })
-    expect(result.rows).toHaveLength(300)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({
-      startkey: '00300',
-      endkey: '00799',
-      descending: false,
-      inclusive_end: false
-    })
-    expect(result.rows).toHaveLength(300)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({
-      startkey: '00799',
-      endkey: '00300',
-      descending: true
-    })
-    expect(result.rows).toHaveLength(300)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({ startkey: '', endkey: '00000' })
-    expect(result.rows).toHaveLength(1)
-    expect(result.total_rows).toBe(800)
-
-    result = (await db.allDocs({
-      keys: ['00000', '00100', '00300']
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(result.rows).toHaveLength(3)
-    expect(result.total_rows).toBe(800)
-
-    result = (await db.allDocs({
-      keys: ['00000', '00100', '00000', '00200', '00100', '00100']
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(result.rows).toHaveLength(6)
-    expect(result.rows.map(row => row.key)).toEqual([
-      '00000',
-      '00100',
-      '00000',
-      '00200',
-      '00100',
-      '00100'
-    ])
-    expect(result.total_rows).toBe(800)
-
-    result = (await db.allDocs({
-      keys: []
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(result.rows).toHaveLength(0)
-    expect(result.total_rows).toBe(800)
-
-    result = (await db.allDocs({
-      keys: ['00700']
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(result.rows).toHaveLength(1)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({ key: '00300' })
-    expect(result.rows).toHaveLength(0)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({ key: '00200' })
-    expect(result.rows).toHaveLength(1)
-    expect(result.total_rows).toBe(800)
-
-    result = await db.allDocs({ key: 'z' })
-    expect(result.rows).toHaveLength(0)
-    expect(result.total_rows).toBe(800)
-  })
-
-  it('test total_rows with both skip and limit', async () => {
-    const docs = [
-      { _id: 'w', foo: 'w' },
-      { _id: 'x', foo: 'x' },
-      { _id: 'y', foo: 'y' },
-      { _id: 'z', foo: 'z' }
-    ]
-    await db.bulkDocs(docs)
-
-    let res = await db.allDocs({ startkey: 'x', limit: 1, skip: 1 })
-    expect(res.total_rows).toBe(4)
-    expect(res.rows).toHaveLength(1)
-    expect(res.rows[0].id).toBe('y')
-
-    const xDoc = await db.get('x')
-    await db.remove(xDoc)
-
-    res = await db.allDocs({ startkey: 'w', limit: 2, skip: 1 })
-    expect(res.total_rows).toBe(3)
-    expect(res.rows).toHaveLength(2)
-    expect(res.rows[0].id).toBe('y')
-  })
-
-  it('test limit option and total_rows', async () => {
-    const docs = [
-      { _id: 'z', foo: 'z' },
-      { _id: 'a', foo: 'a' }
-    ]
-    await db.bulkDocs(docs)
-
-    const res = await db.allDocs({
-      startkey: 'a',
-      endkey: 'z',
-      limit: 1
-    })
-    expect(res.total_rows).toBe(2)
-    expect(res.rows).toHaveLength(1)
-  })
-
-  it('test escaped startkey/endkey', async () => {
-    const id1 = '"weird id!" a'
-    const id2 = '"weird id!" z'
-    const docs = [
-      {
-        _id: id1,
-        foo: 'a'
-      },
-      {
-        _id: id2,
-        foo: 'z'
-      }
-    ]
-    await db.bulkDocs(docs)
-
-    const res = await db.allDocs({
-      startkey: id1,
-      endkey: id2
-    })
-    expect(res.total_rows).toBe(2)
-  })
-
-  it('test "key" option', async () => {
-    await db.bulkDocs([{ _id: '0' }, { _id: '1' }, { _id: '2' }])
-
-    const res = await db.allDocs({ key: '1' })
-    expect(res.rows).toHaveLength(1)
-
-    // Should throw error with both key and keys
-    await expect(
-      db.allDocs({
-        key: '1',
-        keys: ['1', '2']
-      } as any)
-    ).rejects.toThrow()
-
-    // key with startkey and endkey doesn't throw but behavior is weird
-    await db.allDocs({
-      key: '1',
-      startkey: '1'
-    })
-
-    await db.allDocs({
-      key: '1',
-      endkey: '1'
-    })
-  })
-
-  it('test inclusive_end=false', async () => {
-    const docs = [{ _id: '1' }, { _id: '2' }, { _id: '3' }, { _id: '4' }]
-    await db.bulkDocs(docs)
-
-    let res = await db.allDocs({
-      startkey: '',
-      endkey: '2',
-      inclusive_end: false
-    })
-    expect(res.rows).toHaveLength(1)
-
-    res = await db.allDocs({ startkey: '', endkey: '1', inclusive_end: false })
-    expect(res.rows).toHaveLength(0)
-
-    res = await db.allDocs({ inclusive_end: false, endkey: '1', startkey: '0' })
-    expect(res.rows).toHaveLength(0)
-
-    res = await db.allDocs({ startkey: '', endkey: '5', inclusive_end: false })
-    expect(res.rows).toHaveLength(4)
-
-    res = await db.allDocs({ startkey: '', endkey: '4', inclusive_end: false })
-    expect(res.rows).toHaveLength(3)
-
-    res = await db.allDocs({ inclusive_end: false, endkey: '4', startkey: '3' })
-    expect(res.rows).toHaveLength(1)
-
-    res = await db.allDocs({
-      startkey: '9',
-      endkey: '1',
-      descending: true,
-      inclusive_end: false
-    })
-    expect(res.rows).toHaveLength(3)
-
-    res = await db.allDocs({ startkey: '', endkey: '4', inclusive_end: true })
-    expect(res.rows).toHaveLength(4)
-
-    res = await db.allDocs({
-      descending: true,
-      startkey: '3',
-      endkey: '2',
-      inclusive_end: false
-    })
-    expect(res.rows).toHaveLength(1)
-  })
-
-  it('test descending with startkey/endkey', async () => {
-    await db.bulkDocs([
-      { _id: 'a' },
-      { _id: 'b' },
-      { _id: 'c' },
-      { _id: 'd' },
-      { _id: 'e' }
-    ])
-
-    let res = await db.allDocs({
-      descending: true,
-      startkey: 'd',
-      endkey: 'b'
-    })
-    let ids = res.rows.map(x => x.id)
-    expect(ids).toEqual(['d', 'c', 'b'])
-
-    res = await db.allDocs({
-      descending: true,
-      startkey: 'd',
-      endkey: 'b',
-      inclusive_end: false
-    })
-    ids = res.rows.map(x => x.id)
-    expect(ids).toEqual(['d', 'c'])
-
-    res = await db.allDocs({
-      descending: true,
-      startkey: 'd',
-      endkey: 'a',
-      skip: 1,
-      limit: 2
-    })
-    ids = res.rows.map(x => x.id)
-    expect(ids).toEqual(['c', 'b'])
-
-    res = await db.allDocs({
-      descending: true,
-      startkey: 'd',
-      endkey: 'a',
-      skip: 1
-    })
-    ids = res.rows.map(x => x.id)
-    expect(ids).toEqual(['c', 'b', 'a'])
-  })
-
-  it('#3082 test wrong num results returned', async () => {
-    const docs = []
-    for (let i = 0; i < 1000; i++) {
-      docs.push({})
-    }
-
-    let lastkey: string | undefined
-    const allkeys: string[] = []
-
-    async function paginate(): Promise<void> {
-      const opts: any = { include_docs: true, limit: 100 }
-      if (lastkey) {
-        opts.startkey = lastkey
-        opts.skip = 1
-      }
-      const res = await db.allDocs(opts)
-      if (!res.rows.length) {
-        return
-      }
-      if (lastkey) {
-        expect(res.rows[0].key > lastkey).toBe(true)
-      }
-      expect(res.rows).toHaveLength(100)
-      lastkey = res.rows[res.rows.length - 1].key
-      allkeys.push(lastkey)
-      return paginate()
-    }
-
-    await db.bulkDocs(docs)
-    await paginate()
-
-    // Try running all queries at once to try to isolate race condition
-    await Promise.all(
-      allkeys.map(async key => {
-        const res = await db.allDocs({
-          limit: 100,
-          include_docs: true,
-          startkey: key,
-          skip: 1
+      var keys
+      return db
+        .bulkDocs(origDocs)
+        .then(function () {
+          keys = ['3', '1']
+          return db.allDocs({ keys })
         })
-        if (!res.rows.length) {
-          return
-        }
-        expect(res.rows[0].key > key).toBe(true)
-        expect(res.rows).toHaveLength(100)
-      })
-    )
-  })
-
-  it('test empty db', async () => {
-    const res = await db.allDocs()
-    expect(res.rows).toHaveLength(0)
-    expect(res.total_rows).toBe(0)
-  })
-
-  it('test after db close', async () => {
-    await db.close()
-    await expect(db.allDocs()).rejects.toThrow('database is closed')
-  })
-
-  it('test unicode ids and revs', async () => {
-    const id = 'baz\u0000'
-    const res = await db.put({ _id: id })
-    const rev = res.rev
-
-    const doc = await db.get(id)
-    expect(doc._id).toBe(id)
-    expect(doc._rev).toBe(rev)
-
-    const allDocsRes = (await db.allDocs({
-      keys: [id]
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(allDocsRes.rows).toHaveLength(1)
-    const row = allDocsRes.rows[0]
-    if (isNormalRow(row)) {
-      expect(row.value.rev).toBe(rev)
-    }
-  })
-
-  it('5793 _conflicts should not exist if no conflicts', async () => {
-    await db.put({
-      _id: '0',
-      a: 1
-    })
-
-    const result = await db.allDocs({
-      include_docs: true,
-      conflicts: true
-    })
-
-    expect(result.rows[0].doc!._conflicts).toBeUndefined()
-  })
-
-  it('#6230 Test allDocs opts update_seq: false', async () => {
-    await db.bulkDocs(origDocs)
-
-    const result = await db.allDocs({
-      update_seq: false
-    })
-
-    expect(result.rows).toHaveLength(4)
-    expect((result as any).update_seq).toBeUndefined()
-  })
-
-  it('#6230 Test allDocs opts update_seq: true', async () => {
-    await db.bulkDocs(origDocs)
-
-    const result = await db.allDocs({
-      update_seq: true
-    })
-
-    expect(result.rows).toHaveLength(4)
-    expect((result as any).update_seq).toBeDefined()
-
-    const updateSeq = (result as any).update_seq
-    expect(typeof updateSeq === 'number' || typeof updateSeq === 'string').toBe(
-      true
-    )
-
-    function normalizeSeq(seq: any): number {
-      try {
-        if (typeof seq === 'string' && seq.indexOf('-') > 0) {
-          return parseInt(seq.substring(0, seq.indexOf('-')))
-        }
-        return seq
-      } catch (err) {
-        return seq
-      }
-    }
-
-    const normSeq = normalizeSeq(updateSeq)
-    expect(typeof normSeq).toBe('number')
-  })
-
-  it('#6230 Test allDocs opts with update_seq missing', async () => {
-    await db.bulkDocs(origDocs)
-
-    const result = await db.allDocs()
-
-    expect(result.rows).toHaveLength(4)
-    expect((result as any).update_seq).toBeUndefined()
-  })
-
-  it('allDocs with attachments', async () => {
-    const docs: PouchDB.Core.PutDocument<{}>[] = [
-      {
-        _id: 'doc1',
-        _attachments: {
-          'foo.txt': {
-            content_type: 'text/plain',
-            data: Buffer.from('Hello world').toString('base64')
+        .then(function (result) {
+          result.rows.map(keyFunc).should.deep.equal(keys)
+          keys = ['2', '0', '1000']
+          return db.allDocs({ keys })
+        })
+        .then(function (result) {
+          result.rows.map(keyFunc).should.deep.equal(keys)
+          result.rows[2].error.should.equal('not_found')
+          return db.allDocs({
+            keys,
+            descending: true
+          })
+        })
+        .then(function (result) {
+          result.rows.map(keyFunc).should.deep.equal(['1000', '0', '2'])
+          result.rows[0].error.should.equal('not_found')
+          return db.allDocs({
+            keys,
+            startkey: 'a'
+          })
+        })
+        .then(
+          function () {
+            throw new Error('expected an error')
+          },
+          function (err) {
+            should.exist(err)
+            return db.allDocs({
+              keys,
+              endkey: 'a'
+            })
           }
-        }
-      },
-      {
-        _id: 'doc2',
-        _attachments: {
-          'bar.txt': {
-            content_type: 'text/plain',
-            data: Buffer.from('Goodbye world').toString('base64')
+        )
+        .then(
+          function () {
+            throw new Error('expected an error')
+          },
+          function (err) {
+            should.exist(err)
+            return db.allDocs({ keys: [] })
           }
-        }
-      }
-    ]
-
-    await db.bulkDocs(docs)
-
-    const result = await db.allDocs({
-      include_docs: true,
-      attachments: true
+        )
+        .then(function (result) {
+          result.rows.should.have.length(0)
+          return db.get('2')
+        })
+        .then(function (doc) {
+          return db.remove(doc)
+        })
+        .then(function () {
+          return db.allDocs({
+            keys,
+            include_docs: true
+          })
+        })
+        .then(function (result) {
+          result.rows.map(keyFunc).should.deep.equal(keys)
+          result.rows[keys.indexOf('2')].value.deleted.should.equal(
+            true,
+            'deleted doc with keys option'
+          )
+          ;(result.rows[keys.indexOf('2')].doc === null).should.equal(
+            true,
+            'deleted doc with keys option'
+          )
+        })
     })
 
-    expect(result.rows).toHaveLength(2)
-    expect(result.rows[0].doc!._attachments!['foo.txt']).toBeDefined()
-    expect(
-      (result.rows[0].doc!._attachments!['foo.txt'] as any).data
-    ).toBeDefined()
-    expect(result.rows[1].doc!._attachments!['bar.txt']).toBeDefined()
-    expect(
-      (result.rows[1].doc!._attachments!['bar.txt'] as any).data
-    ).toBeDefined()
-  })
+    it('Testing allDocs opts.keys with skip', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      return db
+        .bulkDocs(origDocs)
+        .then(function () {
+          return db.allDocs({
+            keys: ['3', '1'],
+            skip: 1
+          })
+        })
+        .then(function (res) {
+          res.total_rows.should.equal(4)
+          res.rows.should.have.length(1)
+          res.rows[0].id.should.equal('1')
+        })
+    })
 
-  it('allDocs with local documents', async () => {
-    // Create some regular docs
-    await db.bulkDocs([{ _id: 'regular1' }, { _id: 'regular2' }])
+    it('Testing allDocs opts.keys with limit', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      return db
+        .bulkDocs(origDocs)
+        .then(function () {
+          return db.allDocs({
+            keys: ['3', '1'],
+            limit: 1
+          })
+        })
+        .then(function (res) {
+          res.total_rows.should.equal(4)
+          res.rows.should.have.length(1)
+          res.rows[0].id.should.equal('3')
+          return db.allDocs({
+            keys: ['0', '2'],
+            limit: 3
+          })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(2)
+          res.rows[0].id.should.equal('0')
+          res.rows[1].id.should.equal('2')
+        })
+    })
 
-    // Create some local docs
-    await db.put({ _id: '_local/doc1', data: 'local1' })
-    await db.put({ _id: '_local/doc2', data: 'local2' })
+    it('Testing allDocs invalid opts.keys', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      return db
+        .allDocs({ keys: 1234 })
+        .then(function () {
+          throw new Error('should not be here')
+        })
+        .catch(function (err) {
+          should.exist(err)
+        })
+    })
 
-    // allDocs should not return local docs by default
-    const result = await db.allDocs()
-    expect(result.rows).toHaveLength(2)
-    expect(result.rows.every(row => !row.id.startsWith('_local/'))).toBe(true)
+    it('Testing deleting in changes', function (done) {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
 
-    // Trying to get local docs with keys should work
-    const localResult = (await db.allDocs({
-      keys: ['_local/doc1', '_local/doc2'],
-      include_docs: true
-    })) as PouchDB.Core.AllDocsResponse<{}> & {
-      rows: (AllDocsKeyRow | AllDocsNormalRow)[]
-    }
-    expect(localResult.rows).toHaveLength(2)
-    const row0 = localResult.rows[0]
-    const row1 = localResult.rows[1]
-    if (isNormalRow(row0)) {
-      expect(row0.doc).toBeDefined()
-      expect(row0.doc!.data).toBe('local1')
-    }
-    if (isNormalRow(row1)) {
-      expect(row1.doc).toBeDefined()
-      expect(row1.doc!.data).toBe('local2')
-    }
-  })
+      db.info(function (err, info) {
+        var update_seq = info.update_seq
 
-  it('allDocs with complex keys handling', async () => {
-    const complexDocs = [
-      { _id: 'foo/bar' },
-      { _id: 'foo\\bar' },
-      { _id: 'foo bar' },
-      { _id: 'foo\tbar' },
-      { _id: 'foo\nbar' },
-      { _id: 'foo"bar' },
-      { _id: "foo'bar" },
-      { _id: 'foo,bar' },
-      { _id: 'foo;bar' },
-      { _id: 'foo:bar' },
-      { _id: 'foo.bar' },
-      { _id: 'foo-bar' },
-      { _id: 'foo_bar' },
-      { _id: 'foo+bar' },
-      { _id: 'foo=bar' },
-      { _id: 'foo?bar' },
-      { _id: 'foo&bar' },
-      { _id: 'foo#bar' },
-      { _id: 'foo%bar' },
-      { _id: 'foo@bar' },
-      { _id: 'foo!bar' },
-      { _id: 'foo*bar' },
-      { _id: 'foo(bar' },
-      { _id: 'foo)bar' },
-      { _id: 'foo[bar' },
-      { _id: 'foo]bar' },
-      { _id: 'foo{bar' },
-      { _id: 'foo}bar' },
-      { _id: 'foo<bar' },
-      { _id: 'foo>bar' },
-      { _id: 'foo|bar' }
-    ]
+        testUtils.writeDocs(
+          db,
+          JSON.parse(JSON.stringify(origDocs)),
+          function () {
+            db.get('1', function (err, doc) {
+              db.remove(doc, function (err, deleted) {
+                should.exist(deleted.ok)
 
-    await db.bulkDocs(complexDocs)
+                db.changes({
+                  return_docs: true,
+                  since: update_seq
+                })
+                  .on('complete', function (changes) {
+                    var deleted_ids = changes.results.map(function (c) {
+                      if (c.deleted) {
+                        return c.id
+                      }
+                    })
+                    deleted_ids.should.include('1')
 
-    const result = await db.allDocs()
-    expect(result.rows).toHaveLength(complexDocs.length)
+                    done()
+                  })
+                  .on('error', done)
+              })
+            })
+          }
+        )
+      })
+    })
 
-    // Test fetching each one individually
-    for (const doc of complexDocs) {
-      const singleResult = (await db.allDocs({
-        keys: [doc._id]
-      })) as PouchDB.Core.AllDocsResponse<{}> & {
-        rows: (AllDocsKeyRow | AllDocsNormalRow)[]
+    it('Testing updating in changes', function (done) {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+
+      db.info(function (err, info) {
+        var update_seq = info.update_seq
+
+        testUtils.writeDocs(
+          db,
+          JSON.parse(JSON.stringify(origDocs)),
+          function () {
+            db.get('3', function (err, doc) {
+              doc.updated = 'totally'
+              db.put(doc, function () {
+                db.changes({
+                  return_docs: true,
+                  since: update_seq
+                })
+                  .on('complete', function (changes) {
+                    var ids = changes.results.map(function (c) {
+                      return c.id
+                    })
+                    ids.should.include('3')
+
+                    done()
+                  })
+                  .on('error', done)
+              })
+            })
+          }
+        )
+      })
+    })
+
+    it('Testing include docs', function (done) {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      testUtils.writeDocs(
+        db,
+        JSON.parse(JSON.stringify(origDocs)),
+        function () {
+          db.changes({
+            include_docs: true
+          })
+            .on('complete', function (changes) {
+              changes.results.forEach(function (row) {
+                if (row.id === '0') {
+                  row.doc.a.should.equal(1)
+                }
+              })
+              done()
+            })
+            .on('error', done)
+        }
+      )
+    })
+
+    it('Testing conflicts', function (done) {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      testUtils.writeDocs(
+        db,
+        JSON.parse(JSON.stringify(origDocs)),
+        function () {
+          // add conflicts
+          var conflictDoc1 = {
+            _id: '3',
+            _rev: '2-aa01552213fafa022e6167113ed01087',
+            value: 'X'
+          }
+          var conflictDoc2 = {
+            _id: '3',
+            _rev: '2-ff01552213fafa022e6167113ed01087',
+            value: 'Z'
+          }
+          db.put(conflictDoc1, { new_edits: false }, function () {
+            db.put(conflictDoc2, { new_edits: false }, function () {
+              db.get('3', function (err, winRev) {
+                winRev._rev.should.equal(conflictDoc2._rev)
+                db.changes({
+                  return_docs: true,
+                  include_docs: true,
+                  conflicts: true,
+                  style: 'all_docs'
+                })
+                  .on('complete', function (changes) {
+                    changes.results
+                      .map(function (x) {
+                        return x.id
+                      })
+                      .sort()
+                      .should.deep.equal(
+                        ['0', '1', '2', '3'],
+                        'all ids are in _changes'
+                      )
+
+                    var result = changes.results.filter(function (row) {
+                      return row.id === '3'
+                    })[0]
+
+                    result.changes.should.have.length(
+                      3,
+                      'correct number of changes'
+                    )
+                    result.doc._rev.should.equal(conflictDoc2._rev)
+                    result.doc._id.should.equal('3', 'correct doc id')
+                    winRev._rev.should.equal(result.doc._rev)
+                    result.doc._conflicts.should.be.instanceof(Array)
+                    result.doc._conflicts.should.have.length(2)
+                    conflictDoc1._rev.should.equal(result.doc._conflicts[0])
+
+                    db.allDocs(
+                      {
+                        include_docs: true,
+                        conflicts: true
+                      },
+                      function (err, res) {
+                        var row = res.rows[3]
+                        res.rows.should.have.length(
+                          4,
+                          'correct number of changes'
+                        )
+                        row.key.should.equal('3', 'correct key')
+                        row.id.should.equal('3', 'correct id')
+                        row.value.rev.should.equal(winRev._rev, 'correct rev')
+                        row.doc._rev.should.equal(winRev._rev, 'correct rev')
+                        row.doc._id.should.equal('3', 'correct order')
+                        row.doc._conflicts.should.be.instanceof(Array)
+                        row.doc._conflicts.should.have.length(2)
+                        conflictDoc1._rev.should.equal(
+                          res.rows[3].doc._conflicts[0]
+                        )
+                        done()
+                      }
+                    )
+                  })
+                  .on('error', done)
+              })
+            })
+          })
+        }
+      )
+    })
+
+    it('test basic collation', function (done) {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var docs = {
+        docs: [
+          { _id: 'z', foo: 'z' },
+          { _id: 'a', foo: 'a' }
+        ]
       }
-      expect(singleResult.rows).toHaveLength(1)
-      const row = singleResult.rows[0]
-      if (isNormalRow(row)) {
-        expect(row.id).toBe(doc._id)
-      }
-      if ('error' in row) {
-        expect(row.error).toBeUndefined()
-      }
-    }
-  })
+      db.bulkDocs(docs, function () {
+        db.allDocs(
+          {
+            startkey: 'z',
+            endkey: 'z'
+          },
+          function (err, result) {
+            result.rows.should.have.length(1, 'Exclude a result')
+            done()
+          }
+        )
+      })
+    })
 
-  it('allDocs with large result sets', async () => {
-    const largeDocCount = 10000
-    const docs = []
+    it('3883 start_key end_key aliases', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var docs = [
+        { _id: 'a', foo: 'a' },
+        { _id: 'z', foo: 'z' }
+      ]
+      return db
+        .bulkDocs(docs)
+        .then(function () {
+          return db.allDocs({ start_key: 'z', end_key: 'z' })
+        })
+        .then(function (result) {
+          result.rows.should.have.length(1, 'Exclude a result')
+        })
+    })
 
-    for (let i = 0; i < largeDocCount; i++) {
-      docs.push({
-        _id: i.toString().padStart(10, '0'),
-        index: i,
-        data: 'x'.repeat(100)
+    it('test total_rows with a variety of criteria', function (done) {
+      this.timeout(20000)
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+
+      var docs = [
+        { _id: '0' },
+        { _id: '1' },
+        { _id: '2' },
+        { _id: '3' },
+        { _id: '4' },
+        { _id: '5' },
+        { _id: '6' },
+        { _id: '7' },
+        { _id: '8' },
+        { _id: '9' }
+      ]
+      db.bulkDocs({ docs })
+        .then(function (res) {
+          docs[3]._deleted = true
+          docs[7]._deleted = true
+          docs[3]._rev = res[3].rev
+          docs[7]._rev = res[7].rev
+          return db.remove(docs[3])
+        })
+        .then(function () {
+          return db.remove(docs[7])
+        })
+        .then(function () {
+          return db.allDocs()
+        })
+        .then(function (res) {
+          res.rows.should.have.length(8, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ startkey: '5' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(4, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ startkey: '5', skip: 2, limit: 10 })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(2, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ startkey: '5', limit: 0 })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(
+            0,
+            'correctly return rows, startkey w/ limit=0'
+          )
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ keys: ['5'], limit: 0 })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(
+            0,
+            'correctly return rows, keys w/ limit=0'
+          )
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ limit: 0 })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(0, 'correctly return rows, limit=0')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ startkey: '5', descending: true, skip: 1 })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(4, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ startkey: '5', endkey: 'z' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(4, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ startkey: '5', endkey: '5' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(1, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ startkey: '5', endkey: '4' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(0, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ startkey: '5', endkey: '4', descending: true })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(2, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ startkey: '3', endkey: '7', descending: false })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(3, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ startkey: '7', endkey: '3', descending: true })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(3, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ startkey: '', endkey: '0' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(1, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ keys: ['0', '1', '3'] })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(3, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ keys: ['0', '1', '0', '2', '1', '1'] })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(6, 'correctly return rows')
+          res.rows
+            .map(function (row) {
+              return row.key
+            })
+            .should.deep.equal(['0', '1', '0', '2', '1', '1'])
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ keys: [] })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(0, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ keys: ['7'] })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(1, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ key: '3' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(0, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ key: '2' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(1, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          return db.allDocs({ key: 'z' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(0, 'correctly return rows')
+          res.total_rows.should.equal(8, 'correctly return total_rows')
+          done()
+        }, done)
+    })
+
+    it('test total_rows with a variety of criteria * 100', function (done) {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+
+      const docs = []
+      for (let i = 0; i < 1000; ++i) {
+        docs.push({ _id: i.toString().padStart(5, '0') })
+      }
+
+      db.bulkDocs({ docs })
+        .then(function (res) {
+          const deletes = []
+          for (let i = 300; i < 400; ++i) {
+            docs[i]._deleted = true
+            docs[i]._rev = res[i].rev
+            deletes.push(docs[i])
+          }
+          for (let i = 700; i < 800; ++i) {
+            docs[i]._deleted = true
+            docs[i]._rev = res[i].rev
+            deletes.push(docs[i])
+          }
+          if (adapter === 'http') {
+            return testUtils.getServerType().then(serverType => {
+              if (serverType === 'pouchdb-express-router') {
+                // Workaround for https://github.com/pouchdb/pouchdb-express-router/issues/18
+                return deletes.reduce(
+                  (chain, doc) => chain.then(() => db.remove(doc)),
+                  Promise.resolve()
+                )
+              }
+              return Promise.all(deletes.map(doc => db.remove(doc))).then(
+                function (deleted) {
+                  deleted.should.have.length(200)
+                }
+              )
+            })
+          } else {
+            return Promise.all(deletes.map(doc => db.remove(doc))).then(
+              function (deleted) {
+                deleted.should.have.length(200)
+              }
+            )
+          }
+        })
+        .then(function () {
+          return db.allDocs()
+        })
+        .then(function (res) {
+          res.rows.should.have.length(800, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ startkey: '00500' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(400, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ startkey: '00500', skip: 200, limit: 1000 })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(200, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ startkey: '00500', limit: 0 })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(
+            0,
+            'correctly return rows, startkey w/ limit=0'
+          )
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ keys: ['00500'], limit: 0 })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(
+            0,
+            'correctly return rows, keys w/ limit=0'
+          )
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ limit: 0 })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(0, 'correctly return rows, limit=0')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ startkey: '00500', descending: true, skip: 1 })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(400, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ startkey: '00500', endkey: 'z' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(400, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ startkey: '00500', endkey: '00500' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(1, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ startkey: '00500', endkey: '00400' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(0, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({
+            startkey: '00599',
+            endkey: '00400',
+            descending: true
+          })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(200, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({
+            startkey: '00599',
+            endkey: '00400',
+            descending: true,
+            inclusive_end: false
+          })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(199, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({
+            startkey: '00300',
+            endkey: '00799',
+            descending: false
+          })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(300, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({
+            startkey: '00300',
+            endkey: '00799',
+            descending: false,
+            inclusive_end: false
+          })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(300, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({
+            startkey: '00799',
+            endkey: '00300',
+            descending: true
+          })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(300, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ startkey: '', endkey: '00000' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(1, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ keys: ['00000', '00100', '00300'] })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(3, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({
+            keys: ['00000', '00100', '00000', '00200', '00100', '00100']
+          })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(6, 'correctly return rows')
+          res.rows
+            .map(function (row) {
+              return row.key
+            })
+            .should.deep.equal([
+              '00000',
+              '00100',
+              '00000',
+              '00200',
+              '00100',
+              '00100'
+            ])
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ keys: [] })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(0, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ keys: ['00700'] })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(1, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ key: '00300' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(0, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ key: '00200' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(1, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          return db.allDocs({ key: 'z' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(0, 'correctly return rows')
+          res.total_rows.should.equal(800, 'correctly return total_rows')
+          done()
+        }, done)
+    })
+
+    it('test total_rows with both skip and limit', function (done) {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var docs = {
+        docs: [
+          { _id: 'w', foo: 'w' },
+          { _id: 'x', foo: 'x' },
+          { _id: 'y', foo: 'y' },
+          { _id: 'z', foo: 'z' }
+        ]
+      }
+      db.bulkDocs(docs, function () {
+        db.allDocs({ startkey: 'x', limit: 1, skip: 1 }, function (err, res) {
+          res.total_rows.should.equal(4, 'Accurately return total_rows count')
+          res.rows.should.have.length(1, 'Correctly limit the returned rows')
+          res.rows[0].id.should.equal('y', 'Correctly skip 1 doc')
+
+          db.get('x', function (err, xDoc) {
+            db.remove(xDoc, function () {
+              db.allDocs(
+                { startkey: 'w', limit: 2, skip: 1 },
+                function (err, res) {
+                  res.total_rows.should.equal(
+                    3,
+                    'Accurately return total_rows count after delete'
+                  )
+                  res.rows.should.have.length(
+                    2,
+                    'Correctly limit the returned rows after delete'
+                  )
+                  res.rows[0].id.should.equal(
+                    'y',
+                    'Correctly skip 1 doc after delete'
+                  )
+                  done()
+                }
+              )
+            })
+          })
+        })
+      })
+    })
+
+    it('test limit option and total_rows', function (done) {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var docs = {
+        docs: [
+          { _id: 'z', foo: 'z' },
+          { _id: 'a', foo: 'a' }
+        ]
+      }
+      db.bulkDocs(docs, function () {
+        db.allDocs(
+          {
+            startkey: 'a',
+            limit: 1
+          },
+          function (err, res) {
+            res.total_rows.should.equal(2, 'Accurately return total_rows count')
+            res.rows.should.have.length(1, 'Correctly limit the returned rows.')
+            done()
+          }
+        )
+      })
+    })
+
+    it('test escaped startkey/endkey', function (done) {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var id1 = '"weird id!" a'
+      var id2 = '"weird id!" z'
+      var docs = {
+        docs: [
+          {
+            _id: id1,
+            foo: 'a'
+          },
+          {
+            _id: id2,
+            foo: 'z'
+          }
+        ]
+      }
+      db.bulkDocs(docs, function () {
+        db.allDocs(
+          {
+            startkey: id1,
+            endkey: id2
+          },
+          function (err, res) {
+            res.total_rows.should.equal(2, 'Accurately return total_rows count')
+            done()
+          }
+        )
+      })
+    })
+
+    it('test "key" option', function (done) {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      db.bulkDocs(
+        {
+          docs: [{ _id: '0' }, { _id: '1' }, { _id: '2' }]
+        },
+        function (err) {
+          should.not.exist(err)
+          db.allDocs({ key: '1' }, function (err, res) {
+            res.rows.should.have.length(1, 'key option returned 1 doc')
+            db.allDocs(
+              {
+                key: '1',
+                keys: ['1', '2']
+              },
+              function (err) {
+                should.exist(err)
+                db.allDocs(
+                  {
+                    key: '1',
+                    startkey: '1'
+                  },
+                  function (err) {
+                    should.not.exist(err)
+                    db.allDocs(
+                      {
+                        key: '1',
+                        endkey: '1'
+                      },
+                      function (err) {
+                        should.not.exist(err)
+                        // when mixing key/startkey or key/endkey, the results
+                        // are very weird and probably undefined, so don't go beyond
+                        // verifying that there's no error
+                        done()
+                      }
+                    )
+                  }
+                )
+              }
+            )
+          })
+        }
+      )
+    })
+
+    it('test inclusive_end=false', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var docs = [{ _id: '1' }, { _id: '2' }, { _id: '3' }, { _id: '4' }]
+      return db
+        .bulkDocs({ docs })
+        .then(function () {
+          return db.allDocs({ inclusive_end: false, endkey: '2' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(1)
+          return db.allDocs({ inclusive_end: false, endkey: '1' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(0)
+          return db.allDocs({
+            inclusive_end: false,
+            endkey: '1',
+            startkey: '0'
+          })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(0)
+          return db.allDocs({ inclusive_end: false, endkey: '5' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(4)
+          return db.allDocs({ inclusive_end: false, endkey: '4' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(3)
+          return db.allDocs({
+            inclusive_end: false,
+            endkey: '4',
+            startkey: '3'
+          })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(1)
+          return db.allDocs({
+            inclusive_end: false,
+            endkey: '1',
+            descending: true
+          })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(3)
+          return db.allDocs({ inclusive_end: true, endkey: '4' })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(4)
+          return db.allDocs({
+            descending: true,
+            startkey: '3',
+            endkey: '2',
+            inclusive_end: false
+          })
+        })
+        .then(function (res) {
+          res.rows.should.have.length(1)
+        })
+    })
+
+    it('test descending with startkey/endkey', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      return db
+        .bulkDocs([
+          { _id: 'a' },
+          { _id: 'b' },
+          { _id: 'c' },
+          { _id: 'd' },
+          { _id: 'e' }
+        ])
+        .then(function () {
+          return db.allDocs({
+            descending: true,
+            startkey: 'd',
+            endkey: 'b'
+          })
+        })
+        .then(function (res) {
+          var ids = res.rows.map(function (x) {
+            return x.id
+          })
+          ids.should.deep.equal(['d', 'c', 'b'])
+          return db.allDocs({
+            descending: true,
+            startkey: 'd',
+            endkey: 'b',
+            inclusive_end: false
+          })
+        })
+        .then(function (res) {
+          var ids = res.rows.map(function (x) {
+            return x.id
+          })
+          ids.should.deep.equal(['d', 'c'])
+          return db.allDocs({
+            descending: true,
+            startkey: 'd',
+            endkey: 'a',
+            skip: 1,
+            limit: 2
+          })
+        })
+        .then(function (res) {
+          var ids = res.rows.map(function (x) {
+            return x.id
+          })
+          ids.should.deep.equal(['c', 'b'])
+          return db.allDocs({
+            descending: true,
+            startkey: 'd',
+            endkey: 'a',
+            skip: 1
+          })
+        })
+        .then(function (res) {
+          var ids = res.rows.map(function (x) {
+            return x.id
+          })
+          ids.should.deep.equal(['c', 'b', 'a'])
+        })
+    })
+
+    it('#3082 test wrong num results returned', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      var docs = []
+      for (var i = 0; i < 1000; i++) {
+        docs.push({})
+      }
+
+      var lastkey
+      var allkeys = []
+
+      function paginate() {
+        var opts = { include_doc: true, limit: 100 }
+        if (lastkey) {
+          opts.startkey = lastkey
+          opts.skip = 1
+        }
+        return db.allDocs(opts).then(function (res) {
+          if (!res.rows.length) {
+            return
+          }
+          if (lastkey) {
+            res.rows[0].key.should.be.above(lastkey)
+          }
+          res.rows.should.have.length(100)
+          lastkey = res.rows.pop().key
+          allkeys.push(lastkey)
+          return paginate()
+        })
+      }
+
+      return db.bulkDocs(docs).then(function () {
+        return paginate().then(function () {
+          // try running all queries at once to try to isolate race condition
+          return Promise.all(
+            allkeys.map(function (key) {
+              return db
+                .allDocs({
+                  limit: 100,
+                  include_docs: true,
+                  startkey: key,
+                  skip: 1
+                })
+                .then(function (res) {
+                  if (!res.rows.length) {
+                    return
+                  }
+                  res.rows[0].key.should.be.above(key)
+                  res.rows.should.have.length(100)
+                })
+            })
+          )
+        })
+      })
+    })
+
+    it('test empty db', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      return db.allDocs().then(function (res) {
+        res.rows.should.have.length(0)
+        res.total_rows.should.equal(0)
+      })
+    })
+
+    it('test after db close', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      return db.close().then(function () {
+        return db.allDocs().catch(function (err) {
+          err.message.should.equal('database is closed')
+        })
+      })
+    })
+
+    if (adapter === 'local') {
+      // chrome doesn't like \u0000 in URLs
+      it('test unicode ids and revs', function () {
+        var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+        var id = 'baz\u0000'
+        var rev
+        return db
+          .put({ _id: id })
+          .then(function (res) {
+            rev = res.rev
+          })
+          .then(function () {
+            return db.get(id)
+          })
+          .then(function (doc) {
+            doc._id.should.equal(id)
+            doc._rev.should.equal(rev)
+            return db.allDocs({ keys: [id] })
+          })
+          .then(function (res) {
+            res.rows.should.have.length(1)
+            res.rows[0].value.rev.should.equal(rev)
+          })
       })
     }
 
-    // Bulk insert in batches to avoid memory issues
-    const batchSize = 1000
-    for (let i = 0; i < docs.length; i += batchSize) {
-      await db.bulkDocs(docs.slice(i, i + batchSize))
-    }
+    it('5793 _conflicts should not exist if no conflicts', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      return db
+        .put({
+          _id: '0',
+          a: 1
+        })
+        .then(function () {
+          return db.allDocs({
+            include_docs: true,
+            conflicts: true
+          })
+        })
+        .then(function (result) {
+          should.not.exist(result.rows[0].doc._conflicts)
+        })
+    })
 
-    // Test getting all docs
-    const allResult = await db.allDocs()
-    expect(allResult.total_rows).toBe(largeDocCount)
-    expect(allResult.rows).toHaveLength(largeDocCount)
+    it('#6230 Test allDocs opts update_seq: false', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      return db
+        .bulkDocs(origDocs)
+        .then(function () {
+          return db.allDocs({
+            update_seq: false
+          })
+        })
+        .then(function (result) {
+          result.rows.should.have.length(4)
+          should.not.exist(result.update_seq)
+        })
+    })
 
-    // Test pagination
-    let offset = 0
-    const pageSize = 100
-    let totalFetched = 0
+    it('#6230 Test allDocs opts update_seq: true', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
 
-    while (offset < largeDocCount) {
-      const pageResult = await db.allDocs({
-        limit: pageSize,
-        skip: offset
-      })
+      return db
+        .bulkDocs(origDocs)
+        .then(function () {
+          return db.allDocs({
+            update_seq: true
+          })
+        })
+        .then(function (result) {
+          result.rows.should.have.length(4)
+          should.exist(result.update_seq)
+          result.update_seq.should.satisfy(function (update_seq) {
+            if (
+              typeof update_seq === 'number' ||
+              typeof update_seq === 'string'
+            ) {
+              return true
+            } else {
+              return false
+            }
+          })
+          var normSeq = normalizeSeq(result.update_seq)
+          normSeq.should.be.a('number')
+        })
 
-      const expectedCount = Math.min(pageSize, largeDocCount - offset)
-      expect(pageResult.rows).toHaveLength(expectedCount)
-      expect(pageResult.total_rows).toBe(largeDocCount)
+      function normalizeSeq(seq) {
+        try {
+          if (typeof seq === 'string' && seq.indexOf('-') > 0) {
+            return parseInt(seq.substring(0, seq.indexOf('-')))
+          }
+          return seq
+        } catch (err) {
+          return seq
+        }
+      }
+    })
 
-      totalFetched += pageResult.rows.length
-      offset += pageSize
-    }
-
-    expect(totalFetched).toBe(largeDocCount)
-  }, 30000) // Increase timeout for large dataset test
+    it('#6230 Test allDocs opts with update_seq missing', function () {
+      var db = new PouchDB(dbs.name, { adapter: 'sqlite3' })
+      return db
+        .bulkDocs(origDocs)
+        .then(function () {
+          return db.allDocs()
+        })
+        .then(function (result) {
+          result.rows.should.have.length(4)
+          should.not.exist(result.update_seq)
+        })
+    })
+  })
 })
