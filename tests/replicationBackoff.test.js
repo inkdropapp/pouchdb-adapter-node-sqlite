@@ -1,0 +1,73 @@
+const chai = require('chai')
+const chaiAsPromised = require('chai-as-promised')
+const PouchDB = require('pouchdb')
+const testUtils = require('./utils')
+chai.use(chaiAsPromised.default)
+
+// Register the SQLite3 adapter
+const SQLite3Adapter = require('../lib/index')
+PouchDB.plugin(SQLite3Adapter)
+
+var adapters = [['sqlite3', 'http']]
+
+adapters.forEach(function (adapters) {
+  var suiteName =
+    'test.replicationBackoff.js-' + adapters[0] + '-' + adapters[1]
+  describe(suiteName, function () {
+    var dbs = {}
+
+    beforeEach(function () {
+      dbs.name = testUtils.adapterUrl(adapters[0], 'testdb')
+      dbs.remote = testUtils.adapterUrl(adapters[1], 'test_repl_remote')
+    })
+
+    afterEach(async function () {
+      await testUtils.promisify(testUtils.cleanup)([dbs.name, dbs.remote])
+    })
+
+    it('Issue 5402 should not keep adding event listeners when backoff is firing', async function () {
+      this.timeout(1500)
+      var remote = new PouchDB(dbs.remote, {
+        fetch: function () {
+          throw new Error('flunking you')
+        }
+      })
+      var db = new PouchDB(dbs.name)
+      var backOffCount = 0
+      var numberOfActiveListeners = 0
+
+      await new Promise((resolve, reject) => {
+        var replication = db.sync(remote, {
+          live: true,
+          retry: true,
+          heartbeat: 1,
+          timeout: 1,
+          back_off_function: function () {
+            numberOfActiveListeners =
+              replication.pull.listeners('active').length
+            ++backOffCount
+            if (backOffCount > 15 || numberOfActiveListeners > 3) {
+              replication.cancel()
+            }
+            return 1
+          }
+        })
+
+        replication.on('complete', function () {
+          if (numberOfActiveListeners > 3) {
+            reject(
+              new Error(
+                "Number of 'active' listeners shouldn't grow larger than one.  Currently at " +
+                  numberOfActiveListeners
+              )
+            )
+          } else {
+            resolve()
+          }
+        })
+
+        replication.on('error', reject)
+      })
+    })
+  })
+})
