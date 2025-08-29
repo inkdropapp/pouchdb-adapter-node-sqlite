@@ -6,9 +6,7 @@
   "types": "lib/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "mocha tests/all_docs.test.js",
-    "test:tsc": "tsc -p tsconfig.test.json && mocha lib-test/tests/**/*.test.js",
-    "test:watch": "mocha --require ts-node/register --require ./tests/setup.ts tests/**/*.test.ts --watch",
+    "test": "mocha tests --require tests/node.setup.js",
     "lint": "eslint src --ext .ts",
     "prepare": "npm run build"
   },

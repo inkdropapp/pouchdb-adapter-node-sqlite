@@ -1,13 +1,3 @@
-const chai = require('chai')
-const chaiAsPromised = require('chai-as-promised')
-const PouchDB = require('pouchdb')
-const testUtils = require('./utils')
-chai.use(chaiAsPromised.default)
-
-// Register the SQLite3 adapter
-const SQLite3Adapter = require('../lib/index')
-PouchDB.plugin(SQLite3Adapter)
-
 var adapters = [['sqlite3', 'http']]
 
 adapters.forEach(function (adapters) {
