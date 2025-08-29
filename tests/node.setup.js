@@ -11,5 +11,6 @@ chai.use(chaiAsPromised.default)
 const SQLite3Adapter = require('../lib/index').default
 PouchDB.plugin(SQLite3Adapter)
 global.PouchDB = PouchDB.defaults({
-  adapter: 'sqlite3'
+  adapter: 'sqlite3',
+  prefix: 'tmp/'
 })
