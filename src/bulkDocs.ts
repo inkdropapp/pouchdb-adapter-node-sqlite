@@ -164,16 +164,21 @@ async function sqliteBulkDocs(
     }
 
     async function insertAttachmentMappings(seq: number) {
-      const attsToAdd = Object.keys(data._attachments || {})
+      const attsToAdd = Object.keys(data._attachments || [])
+      const digests: { [key: string]: boolean } = {}
 
       if (!attsToAdd.length) {
         return
       }
 
       function add(att: string) {
+        const digest = data._attachments[att].digest as string
+        // skip if the digest is already added
+        if (digests[digest]) return
+        digests[digest] = true
         const sql =
           'INSERT INTO ' + ATTACH_AND_SEQ_STORE + ' (digest, seq) VALUES (?,?)'
-        const sqlArgs = [data._attachments[att].digest, seq]
+        const sqlArgs = [digest, seq]
         return tx.execute(sql, sqlArgs)
       }
 
@@ -316,10 +321,10 @@ async function sqliteBulkDocs(
   })
 
   await transaction(async (txn: Transaction) => {
+    tx = txn
     await verifyAttachments()
 
     try {
-      tx = txn
       await fetchExistingDocs()
       await websqlProcessDocs()
       sqliteChanges.notify(api._name)

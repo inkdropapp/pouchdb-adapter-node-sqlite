@@ -14,3 +14,6 @@ global.PouchDB = PouchDB.defaults({
   adapter: 'sqlite3',
   prefix: 'tmp/'
 })
+
+const debug = require('debug')
+debug.enable('pouch-sqlite:*')
