@@ -75,6 +75,7 @@ async function sqliteBulkDocs(
 
   async function verifyAttachment(digest: string) {
     logger.debug('verify attachment:', digest)
+
     const sql =
       'SELECT count(*) as cnt FROM ' + ATTACH_STORE + ' WHERE digest=?'
     const result = await tx.execute(sql, [digest])
@@ -126,11 +127,6 @@ async function sqliteBulkDocs(
       isUpdate,
       winningRevIsDeleted
     })
-    if (winningRevIsDeleted && !newRevIsDeleted) {
-      const err = createError(MISSING_STUB, 'Document is deleted')
-      logger.error('conflict:', err)
-      throw err
-    }
 
     async function dataWritten(tx: Transaction, seq: number) {
       const id = docInfo.metadata.id
