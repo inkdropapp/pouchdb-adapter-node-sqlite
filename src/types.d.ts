@@ -9,6 +9,7 @@ declare module 'pouchdb-merge' {
   export function compactTree(...args: any[]): any
   export function collectConflicts(...args: any[]): any
   export function traverseRevTree(...args: any[]): any
+  export function winningRev(...args: any[]): any
   export const latest: any
 }
 

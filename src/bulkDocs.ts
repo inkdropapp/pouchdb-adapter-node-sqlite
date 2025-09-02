@@ -115,13 +115,22 @@ async function sqliteBulkDocs(
   async function writeDoc(
     docInfo: DocInfo,
     winningRev: string,
-    _winningRevIsDeleted: boolean,
+    winningRevIsDeleted: boolean,
     newRevIsDeleted: boolean,
     isUpdate: boolean,
     _delta: number,
     resultsIdx: number
   ) {
-    logger.debug('writeDoc:', { ...docInfo, data: null })
+    logger.debug('writeDoc:', docInfo, {
+      newRevIsDeleted,
+      isUpdate,
+      winningRevIsDeleted
+    })
+    if (winningRevIsDeleted && !newRevIsDeleted) {
+      const err = createError(MISSING_STUB, 'Document is deleted')
+      logger.error('conflict:', err)
+      throw err
+    }
 
     async function dataWritten(tx: Transaction, seq: number) {
       const id = docInfo.metadata.id
@@ -264,15 +273,17 @@ async function sqliteBulkDocs(
           callback: (err?: any) => void
         ) => {
           chain = chain.then(() => {
+            const fDoc = fetchedDocs.get(docInfo.metadata.id)
+
             return writeDoc(
               docInfo,
               winningRev,
-              winningRevIsDeleted,
+              winningRevIsDeleted || fDoc?.deleted,
               newRevIsDeleted,
               isUpdate,
               delta,
               resultsIdx
-            ).then(callback, callback)
+            ).then(callback, reject)
           })
         },
         opts,

@@ -3286,31 +3286,25 @@ adapters.forEach(function (adapter) {
       })
     })
 
-    it('Test put another attachment on a doc with attachments', function (done) {
+    it('Test put another attachment on a doc with attachments', async function () {
       var db = new PouchDB(dbs.name)
-      db.put({ _id: 'mydoc' }, function (err, res1) {
-        var blob = testUtils.makeBlob('Mytext')
-        db.putAttachment(
-          'mydoc',
-          'mytext',
-          res1.rev,
-          blob,
-          'text/plain',
-          function (err, res2) {
-            db.putAttachment(
-              'mydoc',
-              'mytext2',
-              res2.rev,
-              blob,
-              'text/plain',
-              function (err, res3) {
-                should.exist(res3.ok)
-                done()
-              }
-            )
-          }
-        )
-      })
+      const res1 = await db.put({ _id: 'mydoc' })
+      var blob = testUtils.makeBlob('Mytext')
+      const res2 = await db.putAttachment(
+        'mydoc',
+        'mytext',
+        res1.rev,
+        blob,
+        'text/plain'
+      )
+      const res3 = await db.putAttachment(
+        'mydoc',
+        'mytext2',
+        res2.rev,
+        blob,
+        'text/plain'
+      )
+      should.exist(res3.ok)
     })
 
     it('Test get with attachments: true if empty attachments', function (done) {
@@ -4972,89 +4966,71 @@ repl_adapters.forEach(function (adapters) {
         }
       })
 
-      it('#8456 bad attachment rev after replication', function (done) {
-        var db = new PouchDB(dbs.name, {})
-        var remote = new PouchDB(dbs.remote, {})
-        var doc_1a, doc_2a, doc_3a, doc_2b, attachment
+      it('#8456 bad attachment rev after replication', async function () {
+        const db = new PouchDB(dbs.name, {})
+        const remote = new PouchDB(dbs.remote, {})
 
-        db.put({ _id: 'doc', key: '1a' })
-          .then(function (res) {
-            doc_1a = res
-            return PouchDB.sync(db, remote)
-          })
-          .then(function () {
-            return db.put({
-              _id: 'doc',
-              _rev: doc_1a.rev,
-              key: '2a'
-            })
-          })
-          .then(function (res) {
-            doc_2a = res
-            return db.put({
-              _id: 'doc',
-              _rev: doc_2a.rev,
-              key: '3a',
-              _attachments: {
-                'attachment.txt': {
-                  content_type: 'text/plain',
-                  data: 'VGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHRleHQ='
-                }
+        const doc_1a = await db.put({ _id: 'doc', key: '1a' })
+        await PouchDB.sync(db, remote)
+
+        const doc_2a = await db.put({
+          _id: 'doc',
+          _rev: doc_1a.rev,
+          key: '2a'
+        })
+
+        const doc_3a = await db.put({
+          _id: 'doc',
+          _rev: doc_2a.rev,
+          key: '3a',
+          _attachments: {
+            'attachment.txt': {
+              content_type: 'text/plain',
+              data: 'VGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHRleHQ='
+            }
+          }
+        })
+
+        const doc_2b = await remote.put({
+          _id: 'doc',
+          _rev: doc_1a.rev,
+          key: '2-b'
+        })
+
+        await PouchDB.sync(db, remote)
+
+        const doc = await db.get('doc', { attachments: true })
+        const attachment = doc._attachments['attachment.txt']
+
+        await db.remove('doc', doc_3a.rev)
+        await db.compact()
+
+        try {
+          console.log('-----------------------------------------')
+          const res = await db.put({
+            _id: 'doc',
+            _rev: doc_2b.rev,
+            key: '3-b',
+            _attachments: {
+              'attachment.txt': {
+                stub: true,
+                digest: attachment.digest,
+                content_type: attachment.content_type,
+                length: attachment.data.length,
+                revpos: attachment.revpos
               }
-            })
+            }
           })
-          .then(function (res) {
-            doc_3a = res
-            return remote.put({
-              _id: 'doc',
-              _rev: doc_1a.rev,
-              key: '2-b'
-            })
-          })
-          .then(function (res) {
-            doc_2b = res
-            return PouchDB.sync(db, remote)
-          })
-          .then(function () {
-            return db.get('doc', { attachments: true })
-          })
-          .then(function (doc) {
-            attachment = doc._attachments['attachment.txt']
-            return db.remove('doc', doc_3a.rev)
-          })
-          .then(function () {
-            return db.compact()
-          })
-          .then(function () {
-            db.put(
-              {
-                _id: 'doc',
-                _rev: doc_2b.rev,
-                key: '3-b',
-                _attachments: {
-                  'attachment.txt': {
-                    stub: true,
-                    digest: attachment.digest,
-                    content_type: attachment.content_type,
-                    length: attachment.data.length,
-                    revpos: attachment.revpos
-                  }
-                }
-              },
-              function (err) {
-                if (!err || err.status !== 412) {
-                  done(
-                    'error 412 is expected to be thrown (attachment should not exist)'
-                  )
-                } else {
-                  done()
-                }
-              }
-            )
-          })
-          .catch(function (err) {
-            done(err)
-          })
+
+          throw new Error(
+            'error 412 is expected to be thrown (attachment should not exist)' +
+              JSON.stringify(res, null, 2)
+          )
+        } catch (err) {
+          if (err.status !== 412) {
+            throw err
+          }
+        }
       })
     }
   )
