@@ -333,7 +333,9 @@ async function sqliteBulkDocs(
 
     try {
       await fetchExistingDocs()
-      await websqlProcessDocs()
+      if (docInfos.length > 0) {
+        await websqlProcessDocs()
+      }
       sqliteChanges.notify(api._name)
     } catch (err: any) {
       throw handleSQLiteError(err)

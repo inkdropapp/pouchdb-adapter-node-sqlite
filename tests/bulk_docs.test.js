@@ -192,9 +192,9 @@ adapters.forEach(function (adapter) {
       })
     })
 
-    it('Test empty bulkDocs', function () {
+    it('Test empty bulkDocs', async function () {
       var db = new PouchDB(dbs.name)
-      return db.bulkDocs([])
+      return await db.bulkDocs([])
     })
 
     it('Test many bulkDocs', function () {
@@ -899,11 +899,9 @@ adapters.forEach(function (adapter) {
       })
     })
 
-    it('Bulk docs empty list', function (done) {
+    it('Bulk docs empty list', async function () {
       var db = new PouchDB(dbs.name)
-      db.bulkDocs({ docs: [] }, function (err) {
-        done(err)
-      })
+      await db.bulkDocs({ docs: [] })
     })
 
     it('handles simultaneous writes', function (done) {
@@ -965,11 +963,9 @@ adapters.forEach(function (adapter) {
       }
     })
 
-    it('Bulk empty list', function (done) {
+    it('Bulk empty list', async function () {
       var db = new PouchDB(dbs.name)
-      db.bulkDocs([], function (err) {
-        done(err)
-      })
+      await db.bulkDocs([])
     })
 
     it('Bulk docs not an array', function (done) {
