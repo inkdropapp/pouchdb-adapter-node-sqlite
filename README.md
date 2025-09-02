@@ -1,6 +1,6 @@
-# pouchdb-adapter-sqlite3
+# pouchdb-adapter-node-sqlite
 
-PouchDB adapter using better-sqlite3 for Electron applications.
+PouchDB adapter using better-sqlite3 for Electron and NodeJS applications.
 
 ## Installation
 
@@ -12,7 +12,7 @@ npm install pouchdb-adapter-sqlite3
 
 ```javascript
 const PouchDB = require('pouchdb')
-const sqliteAdapter = require('pouchdb-adapter-sqlite3')
+const sqliteAdapter = require('pouchdb-adapter-node-sqlite')
 
 // Register the adapter
 PouchDB.plugin(sqliteAdapter)
@@ -24,11 +24,13 @@ const db = new PouchDB('mydb', { adapter: 'sqlite3' })
 db.put({
   _id: 'mydoc',
   title: 'Hello SQLite'
-}).then(() => {
-  return db.get('mydoc')
-}).then(doc => {
-  console.log(doc)
 })
+  .then(() => {
+    return db.get('mydoc')
+  })
+  .then(doc => {
+    console.log(doc)
+  })
 ```
 
 ## Features
@@ -54,3 +56,4 @@ npm test
 ## License
 
 MIT
+
