@@ -74,7 +74,7 @@ adapters.forEach(function (adapter) {
         })
     })
 
-    it('replication and then update and delete creates same rev', function (done) {
+    it('replication and then update and delete creates same rev', async function () {
       var doc = {
         _id: '123-this-is-an-id',
         hello: 'world',
@@ -84,27 +84,27 @@ adapters.forEach(function (adapter) {
       var db1 = PouchDB(dbs.name1)
       var db2 = PouchDB(dbs.name2)
 
-      db1.put(doc).then(function (resp) {
-        db2.replicate.from(db1).on('complete', function () {
-          doc._rev = resp.rev
-          doc.newField = true
-          return Promise.all([db1.put(doc), db2.put(doc)])
-            .then(function (resp) {
-              doc._rev = resp[0].rev
-              return Promise.all([db1.remove(doc), db2.remove(doc)])
-            })
-            .then(function (resp) {
-              return Promise.all([
-                db1.get(doc._id, { rev: resp[0].rev, revs_info: true }),
-                db2.get(doc._id, { rev: resp[0].rev, revs_info: true })
-              ])
-            })
-            .then(function (resp) {
-              resp[0].should.deep.equal(resp[1])
-              done()
-            })
-        })
+      const putResp = await db1.put(doc)
+
+      // Wait for replication to complete
+      await new Promise(resolve => {
+        db2.replicate.from(db1).on('complete', resolve)
       })
+
+      doc._rev = putResp.rev
+      doc.newField = true
+
+      const updateResp = await Promise.all([db1.put(doc), db2.put(doc)])
+
+      doc._rev = updateResp[0].rev
+      const removeResp = await Promise.all([db1.remove(doc), db2.remove(doc)])
+
+      const getResp = await Promise.all([
+        db1.get(doc._id, { rev: removeResp[0].rev, revs_info: true }),
+        db2.get(doc._id, { rev: removeResp[0].rev, revs_info: true })
+      ])
+
+      getResp[0].should.deep.equal(getResp[1])
     })
   })
 })
