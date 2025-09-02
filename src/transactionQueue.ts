@@ -9,8 +9,8 @@ export interface TransactionResult {
 
 export interface Transaction {
   execute: (sql: string, params?: any[]) => Promise<TransactionResult>
-  commit: () => Promise<{ rowsAffected: number }>
-  rollback: () => Promise<{ rowsAffected: number }>
+  commit: () => { rowsAffected: number }
+  rollback: () => { rowsAffected: number }
 }
 
 export interface PendingTransaction {
@@ -47,12 +47,15 @@ export class TransactionQueue {
       setImmediate(async () => {
         try {
           if (tx.readonly) {
-            logger.debug('---> transaction start!')
-            await this.runTransaction(tx.start, false)
+            logger.debug('---> read transaction start!')
+            await this.runReadTransaction(tx.start)
           } else {
             logger.debug('---> write transaction start!')
-            await this.runTransaction(tx.start, true)
+            await this.runWriteTransaction(tx.start)
           }
+        } catch (err) {
+          logger.error('Transaction error:', err)
+          throw err
         } finally {
           logger.debug(
             '<--- transaction finished! queue.length:',
@@ -68,90 +71,150 @@ export class TransactionQueue {
     }
   }
 
-  /**
-   * Creates a function that always runs inside a transaction.
-   *
-   * NOTE: The PouchDB adapter expects async transactions,
-   * but better-sqlite3 only supports synchronous transactions.
-   * Since we can't easily change all the PouchDB adapter code to be synchronous,
-   * we need to stick with manual transaction control using BEGIN/COMMIT/ROLLBACK.
-   */
-  private async runTransaction(
-    fn: (tx: Transaction) => Promise<void>,
-    write: boolean
-  ) {
-    const executeSQL = (sql: string, params?: any[]): TransactionResult => {
-      try {
-        const stmt = this.db.prepare(sql)
-        let result: any[]
-        let info: any
-
-        if (
-          sql.trim().toUpperCase().startsWith('SELECT') ||
-          sql.trim().toUpperCase().startsWith('PRAGMA')
-        ) {
-          result = params ? stmt.all(...params) : stmt.all()
-          info = { changes: 0, lastInsertRowid: 0 }
-        } else {
-          info = params ? stmt.run(...params) : stmt.run()
-          result = []
-        }
-
-        return {
-          rows: result,
-          rowsAffected: info.changes || 0,
-          insertId: Number(info.lastInsertRowid) || undefined
-        }
-      } catch (err) {
-        logger.error('SQL execution error:', err)
-        throw err
-      }
-    }
+  private async runWriteTransaction(fn: (tx: Transaction) => Promise<void>) {
+    let isFinalized = false
+    let isRolledBack = false
 
     const txObject: Transaction = {
-      execute: async (sql: string, params?: any[]) => {
-        return Promise.resolve(executeSQL(sql, params))
-      },
-      commit: async () => Promise.resolve({ rowsAffected: 0 }),
-      rollback: async () => {
-        if (write) {
-          throw new Error('ROLLBACK')
+      execute: async (
+        sql: string,
+        params?: any[]
+      ): Promise<TransactionResult> => {
+        if (isFinalized) {
+          throw new Error('Cannot execute on finalized transaction')
         }
-        return Promise.resolve({ rowsAffected: 0 })
+        try {
+          const stmt = this.db.prepare(sql)
+          let result: any[]
+          let info: any
+
+          if (
+            sql.trim().toUpperCase().startsWith('SELECT') ||
+            sql.trim().toUpperCase().startsWith('PRAGMA')
+          ) {
+            result = params ? stmt.all(...params) : stmt.all()
+            info = { changes: 0, lastInsertRowid: 0 }
+          } else {
+            info = params ? stmt.run(...params) : stmt.run()
+            result = []
+          }
+
+          return {
+            rows: result,
+            rowsAffected: info.changes || 0,
+            insertId: Number(info.lastInsertRowid) || undefined
+          }
+        } catch (err) {
+          logger.error('SQL execution error:', err)
+          throw err
+        }
+      },
+      commit: () => {
+        if (isFinalized) {
+          throw new Error('Transaction already finalized')
+        }
+        this.db.exec('COMMIT')
+        isFinalized = true
+        return { rowsAffected: 0 }
+      },
+      rollback: () => {
+        if (isFinalized) {
+          throw new Error('Transaction already finalized')
+        }
+        this.db.exec('ROLLBACK')
+        isFinalized = true
+        isRolledBack = true
+        return { rowsAffected: 0 }
       }
     }
 
-    if (write) {
-      // Manual transaction control for write operations
-      // We can't use better-sqlite3's transaction() because it doesn't support async functions
-      this.db.exec('BEGIN')
-      try {
-        await fn(txObject)
-        this.db.exec('COMMIT')
-      } catch (err: any) {
-        this.db.exec('ROLLBACK')
-        if (err.message !== 'ROLLBACK') {
-          throw err
+    // Start transaction
+    this.db.exec('BEGIN IMMEDIATE')
+
+    try {
+      await fn(txObject)
+
+      // Auto-commit if not finalized
+      if (!isFinalized) {
+        txObject.commit()
+      }
+    } catch (err) {
+      // Auto-rollback on error if not finalized
+      if (!isFinalized) {
+        try {
+          txObject.rollback()
+        } catch (rollbackErr) {
+          logger.error('Rollback failed:', rollbackErr)
         }
       }
-    } else {
-      // For read-only operations, just execute directly
-      await fn(txObject)
+      throw err
     }
   }
 
+  private async runReadTransaction(fn: (tx: Transaction) => Promise<void>) {
+    const txObject: Transaction = {
+      execute: async (
+        sql: string,
+        params?: any[]
+      ): Promise<TransactionResult> => {
+        try {
+          const stmt = this.db.prepare(sql)
+          let result: any[]
+          let info: any
+
+          if (
+            sql.trim().toUpperCase().startsWith('SELECT') ||
+            sql.trim().toUpperCase().startsWith('PRAGMA')
+          ) {
+            result = params ? stmt.all(...params) : stmt.all()
+            info = { changes: 0, lastInsertRowid: 0 }
+          } else {
+            info = params ? stmt.run(...params) : stmt.run()
+            result = []
+          }
+
+          return {
+            rows: result,
+            rowsAffected: info.changes || 0,
+            insertId: Number(info.lastInsertRowid) || undefined
+          }
+        } catch (err) {
+          logger.error('SQL execution error:', err)
+          throw err
+        }
+      },
+      commit: () => ({ rowsAffected: 0 }),
+      rollback: () => ({ rowsAffected: 0 })
+    }
+
+    // For read-only operations, we don't need explicit transactions
+    // but we run them in the queue to maintain order
+    await fn(txObject)
+  }
+
   async push(fn: (tx: Transaction) => Promise<void>) {
-    return new Promise<void>(resolve => {
-      this.queue.push({ readonly: false, start: fn, finish: resolve })
+    return new Promise<void>((resolve, reject) => {
+      this.queue.push({
+        readonly: false,
+        start: tx => {
+          return fn(tx).then(resolve, reject)
+        },
+        finish: () => {}
+      })
       this.run()
     })
   }
 
   async pushReadOnly(fn: (tx: Transaction) => Promise<void>) {
-    return new Promise<void>(resolve => {
-      this.queue.push({ readonly: true, start: fn, finish: resolve })
+    return new Promise<void>((resolve, reject) => {
+      this.queue.push({
+        readonly: true,
+        start: tx => {
+          return fn(tx).then(resolve, reject)
+        },
+        finish: () => {}
+      })
       this.run()
     })
   }
 }
-
