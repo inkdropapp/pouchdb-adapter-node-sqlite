@@ -57,3 +57,5 @@ npm test
 
 MIT
 
+Copyright (c) 2025 Takuya Matsuyama, all rights reserved.
+

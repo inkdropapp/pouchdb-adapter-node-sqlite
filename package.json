@@ -20,8 +20,16 @@
     "electron",
     "database"
   ],
-  "author": "",
+  "author": "Takuya Matsuyama<t@inkdrop.app>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inkdropapp/pouchdb-adapter-node-sqlite.git"
+  },
+  "bugs": {
+    "url": "https://github.com/inkdropapp/pouchdb-adapter-node-sqlite/issues"
+  },
+  "homepage": "https://github.com/inkdropapp/pouchdb-adapter-node-sqlite#readme",
   "dependencies": {
     "better-sqlite3": "^12.2.0",
     "pouchdb-adapter-utils": "^9.0.0",
