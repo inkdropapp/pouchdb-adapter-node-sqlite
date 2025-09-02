@@ -245,7 +245,6 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
     callback: (err: any, response?: any) => void
   ) => {
     logger.debug('**********bulkDocs!!!!!!!!!!!!!!!!!!!')
-    logger.error(new Error('stack trace').stack)
     try {
       const response = await sqliteBulkDocs(
         {
