@@ -280,8 +280,6 @@ testUtils.promisify = function (fun, context) {
   }
 }
 
-// Use the actual PouchDB modules
-var PouchDB = require('pouchdb')
 var pouchUtils = require('pouchdb-utils')
 var pouchErrors = require('pouchdb-errors')
 var pouchBinaryUtils = require('pouchdb-binary-utils')

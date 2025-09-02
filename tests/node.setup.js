@@ -2,8 +2,13 @@ const chai = (global.chai = require('chai'))
 chaiAsPromised = require('chai-as-promised')
 global.should = chai.should()
 global.assert = chai.assert
-const PouchDB = require('pouchdb')
-global.testUtils = require('./utils')
+
+const PouchDB = require('pouchdb-core')
+const HttpPouch = require('pouchdb-adapter-http')
+const mapreduce = require('pouchdb-mapreduce')
+const replication = require('pouchdb-replication')
+
+PouchDB.plugin(HttpPouch).plugin(mapreduce).plugin(replication)
 
 chai.use(chaiAsPromised.default)
 
@@ -17,3 +22,5 @@ global.PouchDB = PouchDB.defaults({
 
 const debug = require('debug')
 debug.enable('pouch-sqlite:*')
+
+global.testUtils = require('./utils')
