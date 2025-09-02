@@ -376,7 +376,7 @@ adapters.forEach(function (adapter) {
       )
     })
 
-    it('#2951 Parallelized _local gets with 409s/404s', function () {
+    it('#2951 Parallelized _local gets with 409s/404s', async function () {
       var db = new PouchDB(dbs.name)
 
       // we don't want to overload the server and get timeout errors
@@ -392,32 +392,30 @@ adapters.forEach(function (adapter) {
         }
       }
 
-      function getDocWithDefault(db, id, defaultDoc) {
-        return db.get(id).catch(function (err) {
+      async function getDocWithDefault(db, id, defaultDoc) {
+        try {
+          return await db.get(id)
+        } catch (err) {
           /* istanbul ignore if */
           if (err.status !== 404) {
             throw err
           }
           defaultDoc._id = id
-          return db
-            .put(defaultDoc)
-            .catch(function (err) {
-              /* istanbul ignore if */
-              if (err.status !== 409) {
-                // conflict
-                throw err
-              }
-            })
-            .then(function () {
-              return db.get(id)
-            })
-        })
+          try {
+            await db.put(defaultDoc)
+          } catch (err) {
+            /* istanbul ignore if */
+            if (err.status !== 409) {
+              // conflict
+              throw err
+            }
+          }
+          return await db.get(id)
+        }
       }
 
-      return Promise.all(
-        tasks.map(function (task) {
-          return getDocWithDefault(db, task, { foo: 'bar' })
-        })
+      return await Promise.all(
+        tasks.map(task => getDocWithDefault(db, task, { foo: 'bar' }))
       )
     })
 

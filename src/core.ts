@@ -819,7 +819,11 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
           callback(createError(REV_CONFLICT))
         }
       } catch (e: any) {
-        handleSQLiteError(e, callback)
+        if (e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+          callback(createError(REV_CONFLICT))
+        } else {
+          handleSQLiteError(e, callback)
+        }
       }
     }
 
