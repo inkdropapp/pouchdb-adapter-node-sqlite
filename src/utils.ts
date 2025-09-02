@@ -163,6 +163,8 @@ export function handleSQLiteError(
   const errorName = (errorNameMatch && errorNameMatch[1]) || event.name
   const errorReason = event.message
   const error = createError(WSQ_ERROR, errorReason, errorName)
+  error.name = errorName
+  error.message = errorReason
   if (callback) callback(error)
   return error
 }
