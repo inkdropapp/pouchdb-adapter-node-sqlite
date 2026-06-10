@@ -55,7 +55,6 @@
     "pouchdb-core": "^9.0.0",
     "pouchdb-mapreduce": "^9.0.0",
     "pouchdb-replication": "^9.0.0",
-    "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
   }
 }
