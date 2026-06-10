@@ -4,6 +4,6 @@ module.exports = {
   exit: true,
   colors: true,
   reporter: 'spec',
-  'bail': false,
-  'retries': 0
+  bail: false,
+  retries: 0
 }

@@ -71,7 +71,7 @@ async function sqliteBulkDocs(
   }
 
   let tx: Transaction
-  const results = new Array(docInfos.length)
+  const results = Array.from({ length: docInfos.length })
   const fetchedDocs = new Map<string, any>()
 
   async function verifyAttachment(digest: string) {
