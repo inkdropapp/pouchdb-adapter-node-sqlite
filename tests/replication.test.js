@@ -160,7 +160,7 @@ adapters.forEach(function (adapters) {
         })
       })
 
-      it.skip('pull replication with many changes + a conflict (#2543)', function () {
+      it('pull replication with many changes + a conflict (#2543)', function () {
         var db = new PouchDB(dbs.name)
         var remote = new PouchDB(dbs.remote)
         // simulate 5000 normal commits with two conflicts at the very end
@@ -1916,7 +1916,7 @@ adapters.forEach(function (adapters) {
         })
       })
 
-      it.skip('Empty replication updates checkpoint (#5145)', function () {
+      it('Empty replication updates checkpoint (#5145)', function () {
         var db = new PouchDB(dbs.name)
         var remote = new PouchDB(dbs.remote)
         var changes = remote.changes
@@ -3023,15 +3023,13 @@ adapters.forEach(function (adapters) {
         })
       })
 
-      // This fails as it somehow triggers an xhr abort in the http adapter in
-      // node which doesnt have xhr....
-      it.skip('Syncing should stop if one replication fails (issue 838)', function (done) {
+      it('Syncing should stop if one replication fails (issue 838)', function (done) {
         var db = new PouchDB(dbs.name)
         var remote = new PouchDB(dbs.remote)
         var doc1 = { _id: 'adoc', foo: 'bar' }
         var doc2 = { _id: 'anotherdoc', foo: 'baz' }
         var finished = false
-        var replications = db.replicate
+        var replications = db
           .sync(remote, {
             live: true
           })
@@ -3705,7 +3703,7 @@ adapters.forEach(function (adapters) {
       // test validate_doc_update, which is a reasonable substitute
       // for testing design doc replication of non-admin users, since we
       // always test in admin party
-      it.skip('#2267 dont stop replication if single forbidden', function (done) {
+      it('#2267 dont stop replication if single forbidden', function (done) {
         testUtils.isCouchDB(function (isCouchDB) {
           if (adapters[1] !== 'http' || !isCouchDB) {
             return done()
@@ -3752,7 +3750,7 @@ adapters.forEach(function (adapters) {
         })
       })
 
-      it.skip('#2268 dont stop replication if single unauth', function (done) {
+      it('#2268 dont stop replication if single unauth', function (done) {
         testUtils.isCouchDB(function (isCouchDB) {
           if (adapters[1] !== 'http' || !isCouchDB) {
             return done()
@@ -3799,7 +3797,7 @@ adapters.forEach(function (adapters) {
         })
       })
 
-      it.skip('#2268 dont stop replication if many unauth', function (done) {
+      it('#2268 dont stop replication if many unauth', function (done) {
         testUtils.isCouchDB(function (isCouchDB) {
           if (adapters[1] !== 'http' || !isCouchDB) {
             return done()
@@ -3857,7 +3855,7 @@ adapters.forEach(function (adapters) {
 
       // Errors from validate_doc_update should have the message
       // defined in PourchDB.Errors instead of the thrown value.
-      it.skip('#3171 Forbidden validate_doc_update error message', function (done) {
+      it('#3171 Forbidden validate_doc_update error message', function (done) {
         testUtils.isCouchDB(function (isCouchDB) {
           if (adapters[1] !== 'http' || !isCouchDB) {
             return done()
@@ -3912,7 +3910,7 @@ adapters.forEach(function (adapters) {
         })
       })
 
-      it.skip('Test immediate replication canceling', function (done) {
+      it('Test immediate replication canceling', function (done) {
         //See  http://pouchdb.com/guides/replication.html : Cancelling replication
         var db = new PouchDB(dbs.name)
         var remote = new PouchDB(dbs.remote)
@@ -3930,7 +3928,7 @@ adapters.forEach(function (adapters) {
         replicationHandler.cancel()
       })
 
-      it.skip('#3171 Unauthorized validate_doc_update error message', function (done) {
+      it('#3171 Unauthorized validate_doc_update error message', function (done) {
         testUtils.isCouchDB(function (isCouchDB) {
           if (adapters[1] !== 'http' || !isCouchDB) {
             return done()
@@ -3985,7 +3983,7 @@ adapters.forEach(function (adapters) {
         })
       })
 
-      it.skip('#3070 Doc IDs with validate_doc_update errors', function (done) {
+      it('#3070 Doc IDs with validate_doc_update errors', function (done) {
         testUtils.isCouchDB(function (isCouchDB) {
           if (adapters[1] !== 'http' || !isCouchDB) {
             return done()
@@ -4040,7 +4038,7 @@ adapters.forEach(function (adapters) {
         })
       })
 
-      it.skip('#3270 triggers "denied" events', function (done) {
+      it('#3270 triggers "denied" events', function (done) {
         testUtils.isCouchDB(function (isCouchDB) {
           if (/*adapters[1] !== 'http' || */ !isCouchDB) {
             return done()
