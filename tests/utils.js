@@ -177,6 +177,11 @@ testUtils.isCouchDB = function (cb) {
     .then(function (res) {
       cb('couchdb' in res || 'express-pouchdb' in res)
     })
+    .catch(function () {
+      // Host unreachable (e.g. no CouchDB on CI) or non-JSON body:
+      // treat as "not CouchDB" so callers don't hang waiting for cb.
+      cb(false)
+    })
 }
 
 testUtils.getServerType = async () => {
