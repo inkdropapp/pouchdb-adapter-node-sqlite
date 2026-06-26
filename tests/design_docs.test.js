@@ -104,13 +104,13 @@ adapters.forEach(function (adapter) {
         { _id: 'max', score: 4 },
         { _id: 'nuno', score: 3 }
       ]
-      let db = new PouchDB(dbs.name)
+      const db = new PouchDB(dbs.name)
       // Test invalid if adapter doesnt support mapreduce
       if (!db.query || adapter !== 'sqlite3') {
         return
       }
 
-      let indexingEvents = []
+      const indexingEvents = []
 
       db.on('indexing', result => {
         indexingEvents.push(result)

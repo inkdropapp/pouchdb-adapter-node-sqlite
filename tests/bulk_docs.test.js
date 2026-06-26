@@ -8,7 +8,7 @@ function makeDocs(start, end, templateDoc) {
   }
   var docs = []
   for (var i = start; i < end; i++) {
-    var newDoc = eval('(' + templateDocSrc + ')')
+    var newDoc = JSON.parse(templateDocSrc)
     newDoc._id = i.toString()
     newDoc.integer = i
     newDoc.string = i.toString()

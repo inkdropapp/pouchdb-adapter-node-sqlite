@@ -4,12 +4,15 @@
   "description": "PouchDB adapter using better-sqlite3 for Electron applications",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
+  "files": [
+    "lib"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "mkdir -p tmp && mocha tests --require tests/node.setup.js",
     "test:debug": "mkdir -p tmp && mocha tests --require tests/node.setup.js",
-    "lint": "oxlint src",
-    "format": "oxfmt \"**/*.{js,ts,json}\"",
+    "lint": "oxlint",
+    "format": "oxfmt",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

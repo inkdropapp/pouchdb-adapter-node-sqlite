@@ -99,7 +99,7 @@ commonUtils.loadPouchDBForNode = function (plugins) {
   var PouchDB = require(pouchdbSrc)
 
   if (!process.env.COVERAGE) {
-    for (let plugin of plugins) {
+    for (const plugin of plugins) {
       PouchDB.plugin(require(`${scriptPath}/${plugin}`))
     }
   }

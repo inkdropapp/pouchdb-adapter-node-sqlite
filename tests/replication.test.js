@@ -3078,7 +3078,7 @@ adapters.forEach(function (adapters) {
               // document and a failed write for the second
               var doc = content.docs[0]
 
-              if (/^_local/.test(doc._id)) {
+              if (doc._id.startsWith('_local')) {
                 return bulkDocs.apply(remote, [content, opts, callback])
               }
 
@@ -4795,7 +4795,7 @@ adapters.forEach(function (adapters) {
 // This test only needs to run for one configuration, and it slows stuff
 // down
 describe('suite2 test.replication.js-down-test', function () {
-  let dbs = {}
+  const dbs = {}
 
   beforeEach(function (done) {
     dbs.name = testUtils.adapterUrl('local', 'testdb')
