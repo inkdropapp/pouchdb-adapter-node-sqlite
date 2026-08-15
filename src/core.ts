@@ -748,10 +748,10 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
         await tx.execute(sql, [safeJsonStringify(metadata), docId])
 
         await compactRevs(revs, docId, tx)
+        callback()
       } catch (e: any) {
         handleSQLiteError(e, callback)
       }
-      callback()
     })
   }
 
