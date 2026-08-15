@@ -13,6 +13,7 @@
     "test:debug": "mkdir -p tmp && mocha tests --require tests/node.setup.js",
     "lint": "oxlint",
     "format": "oxfmt",
+    "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -35,7 +36,7 @@
   },
   "homepage": "https://github.com/inkdropapp/pouchdb-adapter-node-sqlite#readme",
   "dependencies": {
-    "better-sqlite3": "^12.10.0",
+    "better-sqlite3": "^13.0.3",
     "debug": "^4.4.3",
     "pouchdb-adapter-utils": "^9.0.0",
     "pouchdb-binary-utils": "^9.0.0",
@@ -45,19 +46,19 @@
     "pouchdb-utils": "^9.0.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/debug": "^4.1.13",
-    "@types/node": "^25.9.2",
+    "@types/node": "^26.2.0",
     "@types/pouchdb": "^6.4.2",
     "chai": "^6.2.2",
     "chai-as-promised": "^8.0.2",
-    "mocha": "^11.7.6",
-    "oxfmt": "0.54.0",
-    "oxlint": "1.69.0",
+    "mocha": "^11.8.0",
+    "oxfmt": "0.63.0",
+    "oxlint": "1.78.0",
     "pouchdb-adapter-http": "^9.0.0",
     "pouchdb-core": "^9.0.0",
     "pouchdb-mapreduce": "^9.0.0",
     "pouchdb-replication": "^9.0.0",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   }
 }
