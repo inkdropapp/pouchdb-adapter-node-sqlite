@@ -1,4 +1,4 @@
-const Database = require('better-sqlite3')
+const { DatabaseSync } = require('node:sqlite')
 
 describe('test.doc_count.js-sqlite3', function () {
   var dbs = {}
@@ -16,7 +16,7 @@ describe('test.doc_count.js-sqlite3', function () {
   }
 
   function withRawDb(fn) {
-    var raw = new Database(dbPath())
+    var raw = new DatabaseSync(dbPath())
     try {
       return fn(raw)
     } finally {

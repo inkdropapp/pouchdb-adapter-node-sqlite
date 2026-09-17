@@ -37,13 +37,14 @@ import {
   select,
   compactRevs,
   handleSQLiteError,
+  isUniqueConstraintError,
   getDocCount,
   getStoredDocCount,
   refreshDocCount
 } from './utils'
 
 import openDB, { closeDB, type OpenDatabaseOptions } from './openDatabase'
-import Database from 'better-sqlite3'
+import type { DatabaseSync } from 'node:sqlite'
 import type { Transaction, TransactionQueue } from './transactionQueue'
 import { logger } from './debug'
 
@@ -89,7 +90,7 @@ const sqliteChanges = new Changes()
 function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
   // @ts-ignore
   const api = this as any
-  let db: InstanceType<typeof Database>
+  let db: DatabaseSync
   // @ts-ignore
   let txnQueue: TransactionQueue
   let instanceId: string
@@ -104,7 +105,7 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
     db = openDBResult.db
     txnQueue = openDBResult.transactionQueue
     setup(cb)
-    logger.debug('Database was opened successfully.', db.name)
+    logger.debug('Database was opened successfully.', sqlOpts.name)
   } else {
     handleSQLiteError(openDBResult.error, cb)
   }
@@ -840,7 +841,7 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
           callback(createError(REV_CONFLICT))
         }
       } catch (e: any) {
-        if (e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        if (isUniqueConstraintError(e)) {
           callback(createError(REV_CONFLICT))
         } else {
           handleSQLiteError(e, callback)
