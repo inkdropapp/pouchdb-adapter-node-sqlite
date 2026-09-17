@@ -17,13 +17,14 @@ describe('test.pragmas.js-sqlite3', function () {
     testUtils.cleanup([dbs.name], done)
   })
 
-  it('opens the connection in WAL mode with synchronous NORMAL', function () {
+  it('opens the connection in WAL mode with synchronous NORMAL and a 16 MiB page cache', function () {
     var raw = new DatabaseSync(':memory:')
     try {
       new TransactionQueue(raw)
       // journal_mode reads back as "memory" for an in-memory database, so only
       // the per-connection synchronous level can be checked here
       pragma(raw, 'synchronous').should.equal(1)
+      pragma(raw, 'cache_size').should.equal(-16000)
     } finally {
       raw.close()
     }

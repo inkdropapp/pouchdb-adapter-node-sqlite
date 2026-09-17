@@ -43,6 +43,8 @@ export class TransactionQueue {
     this.db = db
     db.exec('PRAGMA journal_mode = WAL')
     db.exec('PRAGMA synchronous = NORMAL')
+    // node:sqlite's build defaults to a 2 MiB page cache
+    db.exec('PRAGMA cache_size = -16000')
   }
 
   private executeSql(sql: string, params?: any[]): TransactionResult {
