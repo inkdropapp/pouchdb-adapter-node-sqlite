@@ -1,6 +1,6 @@
 {
   "name": "pouchdb-adapter-node-sqlite",
-  "version": "1.2.1",
+  "version": "2.0.0",
   "description": "PouchDB adapter using the Node.js built-in node:sqlite module for Electron applications",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
