@@ -10,6 +10,7 @@ declare module 'pouchdb-merge' {
   export function collectConflicts(...args: any[]): any
   export function traverseRevTree(...args: any[]): any
   export function winningRev(...args: any[]): any
+  export function isDeleted(metadata: any, rev?: string): boolean
   export const latest: any
 }
 

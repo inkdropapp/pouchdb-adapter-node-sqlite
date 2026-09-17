@@ -1,6 +1,12 @@
 import { createError, WSQ_ERROR } from 'pouchdb-errors'
 import { guardedConsole } from 'pouchdb-utils'
-import { BY_SEQ_STORE, ATTACH_STORE, ATTACH_AND_SEQ_STORE } from './constants'
+import {
+  DOC_STORE,
+  BY_SEQ_STORE,
+  ATTACH_STORE,
+  ATTACH_AND_SEQ_STORE,
+  META_STORE
+} from './constants'
 import type { Transaction } from './transactionQueue'
 
 function stringifyDoc(doc: Record<string, any>): string {
@@ -142,6 +148,52 @@ async function compactRevs(
   await deleteOrphans()
 }
 
+async function countDocs(tx: Transaction): Promise<number> {
+  const sql = select(
+    'COUNT(' + DOC_STORE + ".id) AS 'num'",
+    [DOC_STORE, BY_SEQ_STORE],
+    BY_SEQ_STORE + '.seq = ' + DOC_STORE + '.winningseq',
+    BY_SEQ_STORE + '.deleted=0'
+  )
+  const result = await tx.execute(sql, [])
+  return (result.rows[0]!.num as number) || 0
+}
+
+async function getLastSeq(tx: Transaction): Promise<number> {
+  const sql =
+    "SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'by-sequence'), 0) AS seq"
+  const result = await tx.execute(sql, [])
+  return (result.rows[0]!.seq as number) || 0
+}
+
+async function getStoredDocCount(tx: Transaction): Promise<number | null> {
+  const result = await tx.execute(
+    'SELECT doc_count, doc_count_seq FROM ' + META_STORE,
+    []
+  )
+  const row = result.rows[0]
+  if (!row || row.doc_count == null || row.doc_count_seq == null) {
+    return null
+  }
+  const lastSeq = await getLastSeq(tx)
+  return row.doc_count_seq === lastSeq ? (row.doc_count as number) : null
+}
+
+async function getDocCount(tx: Transaction): Promise<number> {
+  const stored = await getStoredDocCount(tx)
+  return stored !== null ? stored : countDocs(tx)
+}
+
+async function refreshDocCount(tx: Transaction): Promise<number> {
+  const docCount = await countDocs(tx)
+  const lastSeq = await getLastSeq(tx)
+  await tx.execute(
+    'UPDATE ' + META_STORE + ' SET doc_count = ?, doc_count_seq = ?',
+    [docCount, lastSeq]
+  )
+  return docCount
+}
+
 export function handleSQLiteError(
   event: Error,
   callback?: (error: any) => void
@@ -164,4 +216,15 @@ export function handleSQLiteError(
   return error
 }
 
-export { stringifyDoc, unstringifyDoc, qMarks, select, compactRevs }
+export {
+  stringifyDoc,
+  unstringifyDoc,
+  qMarks,
+  select,
+  compactRevs,
+  countDocs,
+  getLastSeq,
+  getStoredDocCount,
+  getDocCount,
+  refreshDocCount
+}
