@@ -1,5 +1,20 @@
-import Database from 'better-sqlite3'
+import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
 import { logger } from './debug'
+
+/**
+ * better-sqlite3 bound `undefined` as NULL; node:sqlite throws
+ * "Provided value cannot be bound". Normalise so callers keep the old
+ * behaviour.
+ */
+function toBindParams(params?: any[]): SQLInputValue[] {
+  if (!params) return []
+  return params.map(p => (p === undefined ? null : p))
+}
+
+function isRowReturningSql(sql: string): boolean {
+  const head = sql.trimStart().slice(0, 6).toUpperCase()
+  return head.startsWith('SELECT') || head.startsWith('PRAGMA')
+}
 
 export interface TransactionResult {
   rows: any[]
@@ -22,12 +37,30 @@ export interface PendingTransaction {
 export class TransactionQueue {
   queue: PendingTransaction[] = []
   inProgress = false
-  db: InstanceType<typeof Database>
+  db: DatabaseSync
 
-  constructor(db: InstanceType<typeof Database>) {
+  constructor(db: DatabaseSync) {
     this.db = db
-    db.pragma('journal_mode = WAL')
-    db.pragma('synchronous = NORMAL')
+    db.exec('PRAGMA journal_mode = WAL')
+    db.exec('PRAGMA synchronous = NORMAL')
+  }
+
+  private executeSql(sql: string, params?: any[]): TransactionResult {
+    const stmt = this.db.prepare(sql)
+    const bindParams = toBindParams(params)
+    if (isRowReturningSql(sql)) {
+      return {
+        rows: stmt.all(...bindParams),
+        rowsAffected: 0,
+        insertId: undefined
+      }
+    }
+    const info = stmt.run(...bindParams)
+    return {
+      rows: [],
+      rowsAffected: Number(info.changes) || 0,
+      insertId: Number(info.lastInsertRowid) || undefined
+    }
   }
 
   run() {
@@ -84,26 +117,7 @@ export class TransactionQueue {
           throw new Error('Cannot execute on finalized transaction')
         }
         try {
-          const stmt = this.db.prepare(sql)
-          let result: any[]
-          let info: any
-
-          if (
-            sql.trim().toUpperCase().startsWith('SELECT') ||
-            sql.trim().toUpperCase().startsWith('PRAGMA')
-          ) {
-            result = params ? stmt.all(...params) : stmt.all()
-            info = { changes: 0, lastInsertRowid: 0 }
-          } else {
-            info = params ? stmt.run(...params) : stmt.run()
-            result = []
-          }
-
-          return {
-            rows: result,
-            rowsAffected: info.changes || 0,
-            insertId: Number(info.lastInsertRowid) || undefined
-          }
+          return this.executeSql(sql, params)
         } catch (err) {
           logger.error('SQL execution error:', err)
           throw err
@@ -158,26 +172,7 @@ export class TransactionQueue {
         params?: any[]
       ): Promise<TransactionResult> => {
         try {
-          const stmt = this.db.prepare(sql)
-          let result: any[]
-          let info: any
-
-          if (
-            sql.trim().toUpperCase().startsWith('SELECT') ||
-            sql.trim().toUpperCase().startsWith('PRAGMA')
-          ) {
-            result = params ? stmt.all(...params) : stmt.all()
-            info = { changes: 0, lastInsertRowid: 0 }
-          } else {
-            info = params ? stmt.run(...params) : stmt.run()
-            result = []
-          }
-
-          return {
-            rows: result,
-            rowsAffected: info.changes || 0,
-            insertId: Number(info.lastInsertRowid) || undefined
-          }
+          return this.executeSql(sql, params)
         } catch (err) {
           logger.error('SQL execution error:', err)
           throw err

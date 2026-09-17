@@ -194,6 +194,23 @@ async function refreshDocCount(tx: Transaction): Promise<number> {
   return docCount
 }
 
+// SQLITE_CONSTRAINT (19) | (SQLITE_CONSTRAINT_UNIQUE >> 8 = 8) << 8
+const SQLITE_CONSTRAINT_UNIQUE = 2067
+
+/**
+ * node:sqlite throws a plain Error with `code: 'ERR_SQLITE_ERROR'` and the
+ * SQLite extended result code in `errcode`; better-sqlite3 used to put the
+ * symbolic name in `code`. Accept both plus the message as a last resort.
+ */
+export function isUniqueConstraintError(e: any): boolean {
+  if (!e) return false
+  return (
+    e.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+    e.errcode === SQLITE_CONSTRAINT_UNIQUE ||
+    /UNIQUE constraint failed/.test(String(e.message))
+  )
+}
+
 export function handleSQLiteError(
   event: Error,
   callback?: (error: any) => void

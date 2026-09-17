@@ -1,5 +1,10 @@
-const Database = require('better-sqlite3')
+const { DatabaseSync } = require('node:sqlite')
 const { TransactionQueue } = require('../lib/transactionQueue')
+
+function pragma(db, name) {
+  const row = db.prepare('PRAGMA ' + name).get()
+  return row[name]
+}
 
 describe('test.pragmas.js-sqlite3', function () {
   var dbs = {}
@@ -13,12 +18,12 @@ describe('test.pragmas.js-sqlite3', function () {
   })
 
   it('opens the connection in WAL mode with synchronous NORMAL', function () {
-    var raw = new Database(':memory:')
+    var raw = new DatabaseSync(':memory:')
     try {
       new TransactionQueue(raw)
       // journal_mode reads back as "memory" for an in-memory database, so only
       // the per-connection synchronous level can be checked here
-      raw.pragma('synchronous', { simple: true }).should.equal(1)
+      pragma(raw, 'synchronous').should.equal(1)
     } finally {
       raw.close()
     }
@@ -32,9 +37,9 @@ describe('test.pragmas.js-sqlite3', function () {
         return db.close()
       })
       .then(function () {
-        var raw = new Database('tmp/' + dbs.name + '.sqlite')
+        var raw = new DatabaseSync('tmp/' + dbs.name + '.sqlite')
         try {
-          raw.pragma('journal_mode', { simple: true }).should.equal('wal')
+          pragma(raw, 'journal_mode').should.equal('wal')
         } finally {
           raw.close()
         }

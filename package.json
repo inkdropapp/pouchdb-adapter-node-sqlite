@@ -1,7 +1,7 @@
 {
   "name": "pouchdb-adapter-node-sqlite",
   "version": "1.2.1",
-  "description": "PouchDB adapter using better-sqlite3 for Electron applications",
+  "description": "PouchDB adapter using the Node.js built-in node:sqlite module for Electron applications",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [
@@ -21,12 +21,15 @@
     "adapter",
     "sqlite",
     "sqlite3",
-    "better-sqlite3",
     "electron",
-    "database"
+    "database",
+    "node:sqlite"
   ],
   "author": "Takuya Matsuyama<t@inkdrop.app>",
   "license": "MIT",
+  "engines": {
+    "node": ">=24.16.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/inkdropapp/pouchdb-adapter-node-sqlite.git"
@@ -36,7 +39,6 @@
   },
   "homepage": "https://github.com/inkdropapp/pouchdb-adapter-node-sqlite#readme",
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
     "debug": "^4.4.3",
     "pouchdb-adapter-utils": "^9.0.0",
     "pouchdb-binary-utils": "^9.0.0",
@@ -46,7 +48,6 @@
     "pouchdb-utils": "^9.0.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^9.6.0",
     "@types/debug": "^4.1.13",
     "@types/node": "^26.2.0",
     "@types/pouchdb": "^6.4.2",
