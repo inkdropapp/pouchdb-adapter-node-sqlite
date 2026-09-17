@@ -26,8 +26,8 @@ export class TransactionQueue {
 
   constructor(db: InstanceType<typeof Database>) {
     this.db = db
-    // Enable WAL mode for better concurrency
     db.pragma('journal_mode = WAL')
+    db.pragma('synchronous = NORMAL')
   }
 
   run() {
