@@ -19,10 +19,12 @@ export type OpenDatabaseOptions = DatabaseSyncOptions & {
   /** @deprecated better-sqlite3 option; throws ENOENT-style error when the file is missing. */
   fileMustExist?: boolean
 }
-type OpenDatabaseResult =
+export type OpenDatabaseResult =
   | {
       db: DatabaseSync
       transactionQueue: TransactionQueue
+      /** The number of open PouchDB instances sharing this connection */
+      refs: number
     }
   | {
       error: Error
@@ -78,7 +80,7 @@ function openDBSafely(opts: OpenDatabaseOptions): OpenDatabaseResult {
     }
     const db = new DatabaseSync(opts.name, toDatabaseSyncOptions(opts))
     const transactionQueue = new TransactionQueue(db)
-    return { db, transactionQueue }
+    return { db, transactionQueue, refs: 0 }
   } catch (err: any) {
     return { error: err }
   }
@@ -92,17 +94,34 @@ function openDB(opts: OpenDatabaseOptions) {
     cachedResult = openDBSafely(opts)
     cachedDatabases.set(opts.name, cachedResult)
   }
+  if ('db' in cachedResult) cachedResult.refs++
   return cachedResult
 }
 
-export function closeDB(name: string) {
+/**
+ * Releases one reference to a connection and closes it once no instance
+ * uses it.
+ *
+ * @param name - The cache key `openDB` was called with (`<name>.sqlite`)
+ * @param opened - The result `openDB` returned. Ignored when stale, i.e.
+ *   already force-closed or replaced by a reopen.
+ * @param options.force - Close the connection even while other instances
+ *   use it. `destroy` needs this before deleting the file, since Windows
+ *   refuses to delete an open file.
+ */
+export function closeDB(
+  name: string,
+  opened: OpenDatabaseResult,
+  { force = false }: { force?: boolean } = {}
+) {
   const cachedResult = cachedDatabases.get(name)
-  if (cachedResult) {
-    if ('db' in cachedResult) {
-      cachedResult.db.close()
-    }
-    cachedDatabases.delete(name)
+  if (cachedResult !== opened) return
+  if ('db' in cachedResult) {
+    cachedResult.refs--
+    if (cachedResult.refs > 0 && !force) return
+    if (cachedResult.db.isOpen) cachedResult.db.close()
   }
+  cachedDatabases.delete(name)
 }
 
 export default openDB

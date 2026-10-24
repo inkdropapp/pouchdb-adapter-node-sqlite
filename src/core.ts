@@ -43,6 +43,7 @@ import {
   refreshDocCount
 } from './utils'
 
+import { rm } from 'node:fs/promises'
 import openDB, { closeDB, type OpenDatabaseOptions } from './openDatabase'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Transaction, TransactionQueue } from './transactionQueue'
@@ -87,6 +88,9 @@ const SELECT_DOCS =
 
 const sqliteChanges = new Changes()
 
+/** The database file and the companions WAL mode creates next to it */
+const SQLITE_FILE_SUFFIXES = ['', '-wal', '-shm']
+
 function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
   // @ts-ignore
   const api = this as any
@@ -101,6 +105,8 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
 
   const sqlOpts = Object.assign({}, opts, { name: opts.name + '.sqlite' })
   const openDBResult = openDB(sqlOpts)
+  /** Whether this instance has given its reference to the connection back */
+  let hasReleasedConnection = false
   if ('db' in openDBResult) {
     db = openDBResult.db
     txnQueue = openDBResult.transactionQueue
@@ -694,7 +700,10 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
   }
 
   api._close = (callback: (err?: any) => void) => {
-    closeDB(api._name)
+    if (!hasReleasedConnection) {
+      hasReleasedConnection = true
+      closeDB(sqlOpts.name, openDBResult)
+    }
     callback()
   }
 
@@ -889,10 +898,12 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
     }
   }
 
-  api._destroy = (_opts: any, callback: (err: any, response?: any) => void) => {
-    sqliteChanges.removeAllListeners(api._name)
-    transaction(async (tx: Transaction) => {
-      try {
+  api._destroy = async (
+    _opts: any,
+    callback: (err: any, response?: any) => void
+  ) => {
+    try {
+      await transaction(async (tx: Transaction) => {
         const stores = [
           DOC_STORE,
           BY_SEQ_STORE,
@@ -901,14 +912,25 @@ function SqlPouch(opts: OpenDatabaseOptions, cb: (err: any) => void) {
           LOCAL_STORE,
           ATTACH_AND_SEQ_STORE
         ]
-        stores.forEach(store => {
-          tx.execute('DROP TABLE IF EXISTS ' + store, [])
-        })
-        callback(null, { ok: true })
-      } catch (e: any) {
-        handleSQLiteError(e, callback)
+        for (const store of stores) {
+          await tx.execute('DROP TABLE IF EXISTS ' + store, [])
+        }
+      })
+    } catch (e: any) {
+      return handleSQLiteError(e, callback)
+    }
+    // Close the connection before deleting the files
+    hasReleasedConnection = true
+    closeDB(sqlOpts.name, openDBResult, { force: true })
+    try {
+      for (const suffix of SQLITE_FILE_SUFFIXES) {
+        await rm(sqlOpts.name + suffix, { force: true })
       }
-    })
+    } catch (e: any) {
+      return callback(e)
+    }
+    sqliteChanges.removeAllListeners(api._name)
+    callback(null, { ok: true })
   }
 
   async function fetchAttachmentsIfNecessary(

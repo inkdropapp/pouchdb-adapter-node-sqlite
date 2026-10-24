@@ -30,8 +30,10 @@ export interface Transaction {
 
 export interface PendingTransaction {
   readonly: boolean
-  start: (tx: Transaction) => Promise<void>
-  finish: () => void
+  fn: (tx: Transaction) => Promise<void>
+  /** Settles the caller's promise once the transaction has committed or rolled back */
+  resolve: () => void
+  reject: (err: unknown) => void
 }
 
 export class TransactionQueue {
@@ -83,20 +85,20 @@ export class TransactionQueue {
         try {
           if (tx.readonly) {
             logger.debug('---> read transaction start!')
-            await this.runReadTransaction(tx.start)
+            await this.runReadTransaction(tx.fn)
           } else {
             logger.debug('---> write transaction start!')
-            await this.runWriteTransaction(tx.start)
+            await this.runWriteTransaction(tx.fn)
           }
+          tx.resolve()
         } catch (err) {
           logger.error('Transaction error:', err)
-          throw err
+          tx.reject(err)
         } finally {
           logger.debug(
             '<--- transaction finished! queue.length:',
             this.queue.length
           )
-          tx.finish()
           this.inProgress = false
           if (this.queue.length) this.run()
         }
@@ -189,28 +191,17 @@ export class TransactionQueue {
     await fn(txObject)
   }
 
-  async push(fn: (tx: Transaction) => Promise<void>) {
-    return new Promise<void>((resolve, reject) => {
-      this.queue.push({
-        readonly: false,
-        start: tx => {
-          return fn(tx).then(resolve, reject)
-        },
-        finish: () => {}
-      })
-      this.run()
-    })
+  push(fn: (tx: Transaction) => Promise<void>) {
+    return this.enqueue(fn, false)
   }
 
-  async pushReadOnly(fn: (tx: Transaction) => Promise<void>) {
+  pushReadOnly(fn: (tx: Transaction) => Promise<void>) {
+    return this.enqueue(fn, true)
+  }
+
+  private enqueue(fn: (tx: Transaction) => Promise<void>, readonly: boolean) {
     return new Promise<void>((resolve, reject) => {
-      this.queue.push({
-        readonly: true,
-        start: tx => {
-          return fn(tx).then(resolve, reject)
-        },
-        finish: () => {}
-      })
+      this.queue.push({ readonly, fn, resolve, reject })
       this.run()
     })
   }
