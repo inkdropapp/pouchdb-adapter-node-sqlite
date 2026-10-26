@@ -76,12 +76,13 @@ function toDatabaseSyncOptions(opts: OpenDatabaseOptions): DatabaseSyncOptions {
 function openDBSafely(opts: OpenDatabaseOptions): OpenDatabaseResult {
   try {
     if (opts.fileMustExist && !existsSync(opts.name)) {
-      throw new Error('unable to open database file: ' + opts.name)
+      throw new Error('unable to open database file')
     }
     const db = new DatabaseSync(opts.name, toDatabaseSyncOptions(opts))
     const transactionQueue = new TransactionQueue(db)
     return { db, transactionQueue, refs: 0 }
   } catch (err: any) {
+    err.message += ': ' + opts.name
     return { error: err }
   }
 }

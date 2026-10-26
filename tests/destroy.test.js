@@ -17,6 +17,18 @@ describe('test.destroy.js-sqlite3', function () {
     testUtils.cleanup([dbs.name], done)
   })
 
+  it('includes the file path when it fails to open', async function () {
+    var db = new PouchDB('missing-dir/testdb')
+    try {
+      await db.info()
+      throw new Error('should have failed')
+    } catch (err) {
+      err.message.should.equal(
+        'unable to open database file: tmp/missing-dir/testdb.sqlite'
+      )
+    }
+  })
+
   it('removes the database files on destroy', async function () {
     var db = new PouchDB(dbs.name)
     await db.put({ _id: 'doc' })
